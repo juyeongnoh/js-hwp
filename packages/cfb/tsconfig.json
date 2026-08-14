@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../.tsbuildinfo/cfb.tsbuildinfo",
+    "baseUrl": "../.."
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": []
+}

@@ -1,0 +1,38 @@
+{
+  "name": "js-hwp-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Pure TypeScript toolkit for reading, writing and editing Hangul (HWP / HWPX) word processor documents",
+  "packageManager": "npm@10.9.7",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "editor": "npm run dev -w apps/editor",
+    "clean": "rm -rf packages/*/dist apps/*/dist apps/*/out .tsbuildinfo",
+    "check:deps": "node scripts/check-deps.mjs",
+    "check:publish": "node scripts/check-publish.mjs",
+    "check": "npm run check:deps && npm run typecheck && npm test && npm run build && npm run check:publish",
+    "changeset": "changeset",
+    "version-packages": "changeset version && npm install --package-lock-only",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/cli": "^3.0.0",
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
+}

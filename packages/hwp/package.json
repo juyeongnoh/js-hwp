@@ -1,0 +1,49 @@
+{
+  "name": "@js-hwp/hwp",
+  "version": "0.0.1",
+  "description": "HWP 5.x binary format codec \u2014 parse and serialise Hangul .hwp documents",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --tsconfig ../../tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@js-hwp/cfb": "0.0.1",
+    "@js-hwp/core": "0.0.1",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "@js-hwp/hwpx": "^0.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juyeongnoh/js-hwp.git",
+    "directory": "packages/hwp"
+  },
+  "homepage": "https://github.com/juyeongnoh/js-hwp#readme",
+  "bugs": {
+    "url": "https://github.com/juyeongnoh/js-hwp/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

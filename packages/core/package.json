@@ -1,0 +1,41 @@
+{
+  "name": "@js-hwp/core",
+  "version": "0.0.1",
+  "description": "Document model, builder API and format-agnostic editing operations for HWP documents",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --tsconfig ../../tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juyeongnoh/js-hwp.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/juyeongnoh/js-hwp#readme",
+  "bugs": {
+    "url": "https://github.com/juyeongnoh/js-hwp/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "@js-hwp/cli",
+  "version": "0.0.1",
+  "description": "Command line tools for HWP documents: inspect, convert, extract text",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "bin": {
+    "js-hwp": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/cli.ts --format esm --clean --tsconfig ../../tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "js-hwp": "0.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juyeongnoh/js-hwp.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/juyeongnoh/js-hwp#readme",
+  "bugs": {
+    "url": "https://github.com/juyeongnoh/js-hwp/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
