@@ -4,6 +4,9 @@
  * `.hwp` 파일은 `FileHeader`, 공유 자원의 `DocInfo` 레코드 스트림, 그리고 구역
  * 하나당 레코드 스트림 하나를 담은 OLE2 복합 파일이다. 이 패키지는 그 계층들을
  * `@js-hwp/cfb` 위에 구현한다.
+ *
+ * 본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여
+ * 개발하였습니다.
  */
 
 export { parseHwp, serializeHwp, isHwp, type ParseHwpOptions, type SerializeHwpOptions } from './document.js'

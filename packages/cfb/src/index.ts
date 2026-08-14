@@ -8,6 +8,9 @@
  *
  * 포맷은 `docs/spec/07-compound-file-binary.md`에 문서화돼 있고, 이 패키지가
  * 의도적으로 구현하지 않는 것도 거기 기록돼 있다.
+ *
+ * 본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여
+ * 개발하였습니다.
  */
 
 export { read, readStream, listStorage, lookup, CfbError } from './reader.js'

@@ -48,6 +48,11 @@ scripts/
 *.md
 !/README.md
 
+# 패키지 README는 문서가 아니라 배포물의 일부다. npm이 files와 무관하게
+# 타르볼에 넣고, 레지스트리 페이지 본문이 된다. 저장소에 없으면 클론에서
+# 같은 패키지를 다시 만들 수 없다.
+!packages/*/README.md
+
 # 테스트. 로컬에는 남아 있으므로 `npm test`는 여기서 그대로 돈다.
 packages/*/test/
 *.test.ts
