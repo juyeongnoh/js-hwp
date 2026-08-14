@@ -6,6 +6,7 @@
  * 바이너리로, `@js-hwp/hwpx`가 HWPX 패키지로, `@js-hwp/render`가 HTML과 PDF로
  * 바꾼다.
  *
+ * @preserve
  * 본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여
  * 개발하였습니다.
  */
