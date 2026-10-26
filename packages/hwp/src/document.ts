@@ -157,7 +157,7 @@ export function parseHwp(
   });
 
   const docInfo = getStream(container, "DocInfo");
-  if (!docInfo) throw new HwpFormatError("복합 파일에 DocInfo 스트림이 없습니다.");
+  if (!docInfo) throw new HwpFormatError("DocInfo 스트림이 존재하지 않습니다.");
   parseDocInfo(doc, maybeInflate(docInfo, compressed));
 
   if (options.loadBinData !== false) {

@@ -134,8 +134,8 @@ export function parseFileHeader(data: Uint8Array): FileHeader {
 
   const properties = reader.uint32();
   const license = reader.uint32();
-  const encryptVersion = reader.optionalUint32();
-  const koglCountry = reader.optionalUint8();
+  const encryptVersion = reader.uint32();
+  const koglCountry = reader.uint8();
 
   return {
     version,

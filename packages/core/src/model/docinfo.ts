@@ -35,7 +35,7 @@ export const LANG_NAMES = [
   "user",
 ] as const;
 export type LangName = (typeof LANG_NAMES)[number];
-
+``;
 /** {@link Lang}마다 항목 하나씩, 7개짜리 튜플. */
 export type PerLang<T> = [T, T, T, T, T, T, T];
 
@@ -564,7 +564,7 @@ export interface Style {
 // 바이너리 데이터 (이미지, OLE, 임베드 글꼴)
 // ---------------------------------------------------------------------------
 
-export enum BinDataKind {
+export enum BinDataType {
   /** 파일 안 `BinData/` 아래에 저장된다. */
   Embedding = 0,
   /** 외부 경로로 참조한다. */
@@ -574,12 +574,12 @@ export enum BinDataKind {
 }
 
 export interface BinDataItem {
-  kind: BinDataKind;
+  type: BinDataType;
   /** 점을 뺀 파일 확장자. 예: `png`, `jpg`, `ole`. */
   extension: string;
-  /** {@link BinDataKind.Embedding}과 `Storage`일 때 존재한다. */
+  /** {@link BinDataType.Embedding}과 {@link BinDataType.Storage}일 때 존재한다. */
   data?: Uint8Array;
-  /** {@link BinDataKind.Link}일 때 존재한다. */
+  /** {@link BinDataType.Link}일 때 존재한다. */
   absolutePath?: string;
   relativePath?: string;
   /** 페이로드가 컨테이너 안에서 deflate 압축돼 있으면 true. */
