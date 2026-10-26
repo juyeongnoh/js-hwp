@@ -32,7 +32,7 @@ export class ByteReader {
   set offset(value: number) {
     if (value < 0 || value > this.#bytes.length) {
       throw new HwpFormatError(
-        `Seek out of range: ${value} (length ${this.#bytes.length})`,
+        `이동할 위치가 범위를 벗어났습니다: ${value} (전체 길이: ${this.#bytes.length}바이트)`,
       );
     }
     this.#offset = value;
@@ -53,7 +53,7 @@ export class ByteReader {
   #need(bytes: number): void {
     if (this.remaining < bytes) {
       throw new HwpFormatError(
-        `Unexpected end of record: need ${bytes} bytes at offset ${this.#offset}, have ${this.remaining}`,
+        `레코드가 예상보다 일찍 끝났습니다: 오프셋 ${this.#offset}에서 ${bytes}바이트가 필요하지만 ${this.remaining}바이트만 남아 있습니다.`,
       );
     }
   }

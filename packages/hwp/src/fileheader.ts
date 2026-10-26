@@ -106,7 +106,7 @@ export const DEFAULT_FLAGS: HwpFlags = {
 export function parseFileHeader(data: Uint8Array): FileHeader {
   if (data.length < FILE_HEADER_SIZE) {
     throw new HwpFormatError(
-      `FileHeader must be ${FILE_HEADER_SIZE} bytes, got ${data.length}`,
+      `FileHeader는 최소 ${FILE_HEADER_SIZE}바이트여야 합니다. 실제 길이: ${data.length}바이트`,
     );
   }
 
@@ -116,7 +116,7 @@ export function parseFileHeader(data: Uint8Array): FileHeader {
   );
   if (signature !== SIGNATURE) {
     throw new HwpFormatError(
-      `Not an HWP 5 document: FileHeader signature is ${JSON.stringify(signature)}`,
+      `HWP 5 문서가 아닙니다. FileHeader 시그니처: ${JSON.stringify(signature)}`,
     );
   }
 

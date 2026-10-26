@@ -49,7 +49,7 @@ export function parseRecords(data: Uint8Array): HwpRecord[] {
     if (size === SIZE_ESCAPE) {
       if (offset + 4 > data.length) {
         throw new HwpFormatError(
-          "Record claims an extended size but the stream ends",
+          "레코드에 확장 크기가 표시되어 있지만 크기 값을 읽기 전에 스트림이 끝났습니다.",
         );
       }
       size = view.getUint32(offset, true);
@@ -86,9 +86,9 @@ export function serializeRecords(records: HwpRecord[]): Uint8Array {
   const writer = new ByteWriter();
   for (const record of records) {
     if (record.tagId > 0x3ff)
-      throw new HwpFormatError(`Tag id ${record.tagId} exceeds 10 bits`);
+      throw new HwpFormatError(`태그 ID ${record.tagId}이(가) 10비트 범위를 초과합니다.`);
     if (record.level > 0x3ff)
-      throw new HwpFormatError(`Level ${record.level} exceeds 10 bits`);
+      throw new HwpFormatError(`중첩 레벨 ${record.level}이(가) 10비트 범위를 초과합니다.`);
 
     const size = record.payload.length;
     const long = size >= SIZE_ESCAPE;

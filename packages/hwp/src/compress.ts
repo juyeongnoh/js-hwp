@@ -30,7 +30,7 @@ export function inflate(data: Uint8Array): Uint8Array {
       }
     }
     throw new HwpFormatError(
-      `Failed to inflate stream (${data.length} bytes): ${(rawError as Error).message}`,
+      `스트림 압축 해제에 실패했습니다 (${data.length}바이트): ${(rawError as Error).message}`,
     )
   }
 }
