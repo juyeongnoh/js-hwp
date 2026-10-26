@@ -41,7 +41,6 @@ CLAUDE.md
 
 # 문서, 벤치마크, 예제, 픽스처, 빌드 보조 스크립트
 bench/
-docs/
 examples/
 fixtures/
 scripts/

@@ -6,7 +6,7 @@
  */
 
 import { type HwpDocument, createDocument } from '@js-hwp/core'
-import { ObjectType, foldName, lookup, read as readCfb, write as writeCfb } from '@js-hwp/cfb'
+import { find as findCfb, read as readCfb, utils as cfbUtils, write as writeCfb } from 'cfb'
 import { HwpFormatError } from './bytes.js'
 import { maybeDeflate, maybeInflate } from './compress.js'
 import { parseDocInfo, serializeDocInfo } from './docinfo.js'
@@ -44,9 +44,39 @@ export interface SerializeHwpOptions {
  * 않고 통과시킬지를 함께 정하므로, 둘이 어긋나서 한 스트림을 두 표기로 두 번
  * 쓰는 일이 생길 수 없다.
  */
+const foldName = (name: string): string => name.toUpperCase()
+const SHEETJS_CFB_MARKER = '\u0001Sh33tJ5'
 const isStream = (path: string, name: string): boolean => foldName(path) === foldName(name)
 const isUnder = (path: string, storage: string): boolean =>
   foldName(path).startsWith(`${foldName(storage)}/`)
+
+type CfbContainer = ReturnType<typeof readCfb>
+type CfbEntry = CfbContainer['FileIndex'][number]
+
+function getStream(container: CfbContainer, path: string): Uint8Array | undefined {
+  const entry = findCfb(container, `/${path}`)
+  return entry?.type === 2 ? toUint8Array(entry) : undefined
+}
+
+function listEntries(container: CfbContainer): { path: string; entry: CfbEntry }[] {
+  const rootPath = container.FullPaths[0] ?? ''
+  return container.FileIndex.flatMap((entry, index) => {
+    const fullPath = container.FullPaths[index]
+    if (!fullPath) return []
+    const path = fullPath.startsWith(rootPath) ? fullPath.slice(rootPath.length) : fullPath
+    return path ? [{ path, entry }] : []
+  })
+}
+
+function toUint8Array(entry: CfbEntry): Uint8Array {
+  const bytes = entry.content
+  // SheetJS는 길이가 0인 스트림의 content를 설정하지 않는다.
+  if (bytes == null) {
+    if (entry.size !== 0) throw new HwpFormatError('Compound file stream has no content')
+    return new Uint8Array(0)
+  }
+  return bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes)
+}
 
 /** 이것이 HWP 5.x 바이너리 문서인가? */
 export function isHwp(data: Uint8Array): boolean {
@@ -57,10 +87,10 @@ export function isHwp(data: Uint8Array): boolean {
     if (data[i] !== cfbSignature[i]) return false
   }
   try {
-    const container = readCfb(data)
-    const header = lookup(container, 'FileHeader')
-    if (!header || header.content.length < SIGNATURE.length) return false
-    return new TextDecoder('ascii').decode(header.content.subarray(0, SIGNATURE.length)) === SIGNATURE
+    const container = readCfb(data, { type: 'array' })
+    const header = getStream(container, 'FileHeader')
+    if (!header || header.length < SIGNATURE.length) return false
+    return new TextDecoder('ascii').decode(header.subarray(0, SIGNATURE.length)) === SIGNATURE
   } catch {
     return false
   }
@@ -68,9 +98,10 @@ export function isHwp(data: Uint8Array): boolean {
 
 /** HWP 5.x 바이너리 문서를 파싱한다. */
 export function parseHwp(data: Uint8Array, options: ParseHwpOptions = {}): HwpDocument {
-  const container = readCfb(data)
+  const container = readCfb(data, { type: 'array' })
+  const entries = listEntries(container)
 
-  const headerStream = lookup(container, 'FileHeader')?.content
+  const headerStream = getStream(container, 'FileHeader')
   if (!headerStream) throw new HwpFormatError('Compound file has no FileHeader stream')
   const fileHeader = parseFileHeader(headerStream)
 
@@ -104,21 +135,21 @@ export function parseHwp(data: Uint8Array, options: ParseHwpOptions = {}): HwpDo
     sections: [],
   })
 
-  const docInfo = lookup(container, 'DocInfo')?.content
+  const docInfo = getStream(container, 'DocInfo')
   if (!docInfo) throw new HwpFormatError('Compound file has no DocInfo stream')
   parseDocInfo(doc, maybeInflate(docInfo, compressed))
 
   if (options.loadBinData !== false) {
-    for (const entry of container.entries) {
-      if (!isUnder(entry.path, 'BinData') || entry.type !== ObjectType.Stream) continue
-      const name = entry.path.slice('BinData/'.length)
+    for (const { path, entry } of entries) {
+      if (!isUnder(path, 'BinData') || entry.type !== 2) continue
+      const name = path.slice('BinData/'.length)
       const dot = name.lastIndexOf('.')
       const id = dot === -1 ? name : name.slice(0, dot)
       // `DocInfo`는 id를 `BIN%04X`로 적는다. `bin0001.png`라는 이름의 스트림도
       // 같은 항목을 가리키므로 컨테이너가 하는 방식대로 대조한다.
       const existing = doc.binData.find((item) => foldName(item.id ?? '') === foldName(id))
       // BinData 스트림은 레코드 스트림과 독립적으로 압축된다.
-      const bytes = safeInflate(entry.content, existing?.compressed ?? compressed)
+      const bytes = safeInflate(toUint8Array(entry), existing?.compressed ?? compressed)
       if (existing) existing.data = bytes
       else {
         doc.binData.push({
@@ -131,12 +162,12 @@ export function parseHwp(data: Uint8Array, options: ParseHwpOptions = {}): HwpDo
     }
   }
 
-  const sectionPaths = container.entries
-    .filter((entry) => /^BodyText\/Section\d+$/i.test(entry.path))
+  const sectionPaths = entries
+    .filter(({ path, entry }) => entry.type === 2 && /^BodyText\/Section\d+$/i.test(path))
     .sort((a, b) => sectionNumber(a.path) - sectionNumber(b.path))
 
   for (const entry of sectionPaths) {
-    doc.sections.push(parseSection(doc, maybeInflate(entry.content, compressed)))
+    doc.sections.push(parseSection(doc, maybeInflate(toUint8Array(entry.entry), compressed)))
   }
 
   if (doc.sections.length === 0) {
@@ -148,24 +179,25 @@ export function parseHwp(data: Uint8Array, options: ParseHwpOptions = {}): HwpDo
     }
   }
 
-  const preview = lookup(container, 'PrvText')?.content
+  const preview = getStream(container, 'PrvText')
   if (preview) doc.preview = decodeUtf16(preview)
 
   // 모델링하지 않는 스트림을 보관해서 읽고-고치고-쓰는 주기가 보존하게 한다.
   doc.preserved ??= {}
   doc.preserved.streams = {}
-  for (const entry of container.entries) {
-    if (entry.type !== ObjectType.Stream) continue
+  for (const { path, entry } of entries) {
+    if (entry.type !== 2) continue
     if (
-      isStream(entry.path, 'FileHeader') ||
-      isStream(entry.path, 'DocInfo') ||
-      isStream(entry.path, 'PrvText') ||
-      isUnder(entry.path, 'BodyText') ||
-      isUnder(entry.path, 'BinData')
+      isStream(path, SHEETJS_CFB_MARKER) ||
+      isStream(path, 'FileHeader') ||
+      isStream(path, 'DocInfo') ||
+      isStream(path, 'PrvText') ||
+      isUnder(path, 'BodyText') ||
+      isUnder(path, 'BinData')
     ) {
       continue
     }
-    doc.preserved.streams[entry.path] = entry.content
+    doc.preserved.streams[path] = toUint8Array(entry)
   }
 
   return doc
@@ -201,7 +233,11 @@ export function serializeHwp(doc: HwpDocument, options: SerializeHwpOptions = {}
     streams[path] ??= bytes
   }
 
-  return writeCfb({ streams })
+  const container = cfbUtils.cfb_new()
+  for (const [path, content] of Object.entries(streams)) {
+    cfbUtils.cfb_add(container, path, content, { unsafe: true })
+  }
+  return new Uint8Array(writeCfb(container))
 }
 
 const sectionNumber = (path: string): number => Number(/(\d+)$/.exec(path)?.[1] ?? 0)

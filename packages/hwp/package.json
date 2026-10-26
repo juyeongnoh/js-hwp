@@ -27,8 +27,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@js-hwp/cfb": "0.0.1",
     "@js-hwp/core": "0.0.1",
+    "cfb": "^1.2.2",
     "fflate": "^0.8.2"
   },
   "devDependencies": {

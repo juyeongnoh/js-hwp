@@ -7,7 +7,7 @@
  *
  */
 
-export const HWPTAG_BEGIN = 0x010
+export const HWPTAG_BEGIN = 0x010;
 
 /** `DocInfo` 스트림에 나타나는 레코드. */
 export enum DocInfoTag {
@@ -71,21 +71,26 @@ export enum SectionTag {
 
 const DOC_INFO_NAMES = new Map<number, string>(
   Object.entries(DocInfoTag)
-    .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number")
     .map(([name, value]) => [value, name]),
-)
+);
 
 const SECTION_NAMES = new Map<number, string>(
   Object.entries(SectionTag)
-    .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number")
     .map(([name, value]) => [value, name]),
-)
+);
 
 /** 진단과 CLI 레코드 덤프를 위한 사람이 읽는 태그 이름. */
-export function tagName(tagId: number, stream: 'docinfo' | 'section' = 'section'): string {
-  const table = stream === 'docinfo' ? DOC_INFO_NAMES : SECTION_NAMES
-  const other = stream === 'docinfo' ? SECTION_NAMES : DOC_INFO_NAMES
-  return table.get(tagId) ?? other.get(tagId) ?? `Unknown(0x${tagId.toString(16)})`
+export function tagName(
+  tagId: number,
+  stream: "docinfo" | "section" = "section",
+): string {
+  const table = stream === "docinfo" ? DOC_INFO_NAMES : SECTION_NAMES;
+  const other = stream === "docinfo" ? SECTION_NAMES : DOC_INFO_NAMES;
+  return (
+    table.get(tagId) ?? other.get(tagId) ?? `Unknown(0x${tagId.toString(16)})`
+  );
 }
 
 /**
@@ -96,52 +101,52 @@ export function tagName(tagId: number, stream: 'docinfo' | 'section' = 'section'
  * {@link readCtrlId}가 정확히 그렇게 한다.
  */
 export const CtrlId = {
-  Table: 'tbl ',
+  Table: "tbl ",
   /** 그리기 개체 껍데기 — 실제 도형은 그 자식 레코드에 있다. */
-  DrawingObject: 'gso ',
-  Equation: 'eqed',
-  SectionDefinition: 'secd',
-  ColumnDefinition: 'cold',
-  Header: 'head',
-  Footer: 'foot',
-  Footnote: 'fn  ',
-  Endnote: 'en  ',
+  DrawingObject: "gso ",
+  Equation: "eqed",
+  SectionDefinition: "secd",
+  ColumnDefinition: "cold",
+  Header: "head",
+  Footer: "foot",
+  Footnote: "fn  ",
+  Endnote: "en  ",
   /** 자동 번호 (쪽, 각주, 그림 등). */
-  AutoNumber: 'atno',
+  AutoNumber: "atno",
   /** 번호 다시 시작. */
-  NewNumber: 'nwno',
+  NewNumber: "nwno",
   /** 쪽 감추기 컨트롤. */
-  PageHiding: 'pghd',
+  PageHiding: "pghd",
   /** 홀/짝수 쪽 조정. */
-  PageOddEven: 'pgct',
+  PageOddEven: "pgct",
   /** 쪽 번호 위치. */
-  PageNumberPosition: 'pgnp',
-  IndexMark: 'idxm',
-  Bookmark: 'bokm',
+  PageNumberPosition: "pgnp",
+  IndexMark: "idxm",
+  Bookmark: "bokm",
   /** 겹침 문자. */
-  Compose: 'tcps',
+  Compose: "tcps",
   /** 덧말. */
-  Dutmal: 'tdut',
+  Dutmal: "tdut",
   /** 숨은 설명. */
-  HiddenComment: 'tcmt',
+  HiddenComment: "tcmt",
   /** 필드 컨트롤: 누름틀, 하이퍼링크, 메일 머지, 수식 등. */
-  FieldClickHere: '%clk',
-  FieldHyperlink: '%hlk',
-  FieldMailMerge: '%mmg',
-  FieldCrossRef: '%xrf',
-  FieldFormula: '%fmu',
-  FieldPath: '%pat',
-  FieldBookmark: '%bmk',
-  FieldSummary: '%smr',
-  FieldUserInfo: '%usr',
-  FieldDate: '%dte',
-  FieldDocDate: '%ddt',
-  FieldMemo: '%%me',
-  FieldPrivateInfo: '%cpr',
-  FieldTableOfContents: '%toc',
-} as const
+  FieldClickHere: "%clk",
+  FieldHyperlink: "%hlk",
+  FieldMailMerge: "%mmg",
+  FieldCrossRef: "%xrf",
+  FieldFormula: "%fmu",
+  FieldPath: "%pat",
+  FieldBookmark: "%bmk",
+  FieldSummary: "%smr",
+  FieldUserInfo: "%usr",
+  FieldDate: "%dte",
+  FieldDocDate: "%ddt",
+  FieldMemo: "%%me",
+  FieldPrivateInfo: "%cpr",
+  FieldTableOfContents: "%toc",
+} as const;
 
-export type CtrlIdValue = (typeof CtrlId)[keyof typeof CtrlId]
+export type CtrlIdValue = (typeof CtrlId)[keyof typeof CtrlId];
 
 /** 페이로드가 개체가 아니라 중첩된 문단 리스트인 컨트롤. */
 export const TEXT_CONTAINER_CTRL_IDS = new Set<string>([
@@ -150,7 +155,11 @@ export const TEXT_CONTAINER_CTRL_IDS = new Set<string>([
   CtrlId.Footnote,
   CtrlId.Endnote,
   CtrlId.HiddenComment,
-])
+]);
 
 /** 텍스트에서 `0x0b`(확장) 제어 문자를 차지하는 컨트롤. */
-export const EXTENDED_CTRL_IDS = new Set<string>([CtrlId.Table, CtrlId.DrawingObject, CtrlId.Equation])
+export const EXTENDED_CTRL_IDS = new Set<string>([
+  CtrlId.Table,
+  CtrlId.DrawingObject,
+  CtrlId.Equation,
+]);

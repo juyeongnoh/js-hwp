@@ -24,6 +24,7 @@ import {
   type Run,
   type Section,
   PageBreakInTable,
+  RelativeTo,
   type TableCell,
   type TableRow,
   VerticalAlign,
@@ -480,14 +481,21 @@ function readTable(node: RecordNode, reader: ByteReader, context: ParseContext):
     repeatHeaderRows = bit(properties, 2) ? 1 : 0
   }
 
-  // 셀은 컨트롤의 LIST_HEADER 자식이고 행 우선 순서다.
-  const cellNodes = node.children.filter((child) => child.tagId === SectionTag.ListHeader)
+  // 셀의 문단은 LIST_HEADER의 자식이 아니라 같은 레벨의 뒤따르는 레코드다.
+  // LIST_HEADER의 문단 수로 어느 셀에 속하는지 구분한다.
   const rows: TableRow[] = Array.from({ length: Math.max(rowCount, 1) }, () => ({ cells: [] }))
-
-  for (const cellNode of cellNodes) {
-    const cell = readTableCell(cellNode, context)
-    const row = rows[cell.row] ?? rows[rows.length - 1]
-    row?.cells.push(cell)
+  let currentCell: TableCell | undefined
+  let remainingParagraphs = 0
+  for (const child of node.children) {
+    if (child.tagId === SectionTag.ListHeader) {
+      currentCell = readTableCell(child, context)
+      const row = rows[currentCell.row] ?? rows[rows.length - 1]
+      row?.cells.push(currentCell)
+      remainingParagraphs = new ByteReader(child.payload).optionalUint16() - currentCell.paragraphs.length
+    } else if (child.tagId === SectionTag.ParaHeader && currentCell && remainingParagraphs > 0) {
+      currentCell.paragraphs.push(readParagraph(child, context))
+      remainingParagraphs--
+    }
   }
 
   return {
@@ -504,8 +512,9 @@ function readTable(node: RecordNode, reader: ByteReader, context: ParseContext):
 
 function readTableCell(node: RecordNode, context: ParseContext): TableCell {
   const reader = new ByteReader(node.payload)
-  reader.int32() // paragraph count
+  reader.uint16() // paragraph count (LIST_HEADER)
   const properties = reader.optionalUint32()
+  if (node.payload.length >= 34) reader.optionalUint16() // width reference (extended LIST_HEADER)
 
   const col = reader.optionalUint16()
   const row = reader.optionalUint16()
@@ -597,7 +606,7 @@ function readObjectPlacement(reader: ByteReader): Control extends { placement: i
   return {
     treatAsChar: bit(properties, 0),
     affectLineSpacing: bit(properties, 2),
-    vertRelTo: bits(properties, 3, 4),
+    vertRelTo: bits(properties, 3, 4) === 2 ? RelativeTo.Paragraph : bits(properties, 3, 4),
     vertAlign: bits(properties, 5, 7),
     horzRelTo: bits(properties, 8, 9),
     horzAlign: bits(properties, 10, 12),
@@ -609,6 +618,8 @@ function readObjectPlacement(reader: ByteReader): Control extends { placement: i
     offsetY,
     width,
     height,
+    widthCriterion: bits(properties, 15, 17),
+    heightCriterion: bits(properties, 18, 19),
     zOrder,
     marginTop,
     marginBottom,
@@ -678,7 +689,7 @@ function append(runs: Run[], charShapeId: number, item: InlineItem): void {
 export function serializeSection(doc: HwpDocument, section: Section, isFirst: boolean): Uint8Array {
   const writer = new RecordWriter()
   section.paragraphs.forEach((paragraph, index) => {
-    writeParagraph(writer, doc, paragraph, index === 0 && isFirst ? section : undefined)
+    writeParagraph(writer, doc, paragraph, index === 0 && isFirst ? section : undefined, index === section.paragraphs.length - 1)
   })
   return writer.finish()
 }
@@ -707,7 +718,8 @@ function encodeParagraphText(paragraph: Paragraph, sectionForDefinition?: Sectio
   const pushExtended = (code: number, control: Control): void => {
     mark(code)
     extended.push({ control })
-    codes.push(code, 0, 0, 0, 0, 0, 0, code)
+    const id = writeCtrlId(ctrlIdFor(control))
+    codes.push(code, id & 0xffff, id >>> 16, 0, 0, 0, 0, code)
   }
 
   const pushInline = (code: number, payload: number[] = []): void => {
@@ -721,7 +733,14 @@ function encodeParagraphText(paragraph: Paragraph, sectionForDefinition?: Sectio
   if (sectionForDefinition) {
     mark(0x02)
     extended.push({ control: { type: 'unknown', ctrlId: CtrlId.SectionDefinition } })
-    codes.push(0x02, 0, 0, 0, 0, 0, 0, 0x02)
+    const id = writeCtrlId(CtrlId.SectionDefinition)
+    codes.push(0x02, id & 0xffff, id >>> 16, 0, 0, 0, 0, 0x02)
+    extended.push({ control: { type: 'unknown', ctrlId: CtrlId.ColumnDefinition } })
+    const columnId = writeCtrlId(CtrlId.ColumnDefinition)
+    codes.push(0x02, columnId & 0xffff, columnId >>> 16, 0, 0, 0, 0, 0x02)
+    const firstCharShapeId = paragraph.runs[0]?.charShapeId ?? 0
+    charShapes.push({ position: 0, charShapeId: firstCharShapeId })
+    lastShapeId = firstCharShapeId
   }
 
   for (const run of paragraph.runs) {
@@ -776,7 +795,27 @@ function encodeParagraphText(paragraph: Paragraph, sectionForDefinition?: Sectio
     charShapes.push({ position: 0, charShapeId: paragraph.runs[0]?.charShapeId ?? 0 })
   }
 
+  // HWP 문단의 문자 수와 PARA_TEXT에는 끝의 PARA_BREAK도 포함된다.
+  codes.push(CHAR_PARA_BREAK)
+
   return { codes, charShapes, extended, controlMask }
+}
+
+function ctrlIdFor(control: Control): string {
+  switch (control.type) {
+    case 'table': return CtrlId.Table
+    case 'picture': return CtrlId.DrawingObject
+    case 'header': return CtrlId.Header
+    case 'footer': return CtrlId.Footer
+    case 'footnote': return CtrlId.Footnote
+    case 'endnote': return CtrlId.Endnote
+    case 'bookmark': return CtrlId.Bookmark
+    case 'fieldBegin':
+      return Object.entries(FIELD_KIND_BY_CTRL_ID).find(([, kind]) => kind === control.fieldKind)?.[0]
+        ?? CtrlId.FieldHyperlink
+    case 'unknown': return control.ctrlId
+    default: return CtrlId.DrawingObject
+  }
 }
 
 function controlCharFor(control: Control): number {
@@ -827,12 +866,16 @@ function writeParagraph(
   doc: HwpDocument,
   paragraph: Paragraph,
   sectionForDefinition?: Section,
+  lastInList = false,
+  cellWidth?: number,
 ): void {
   const encoded = encodeParagraphText(paragraph, sectionForDefinition)
+  const table = paragraph.runs.flatMap((run) => run.items).find((item) => item.type === 'table')
+  const hasLineSegment = table !== undefined || cellWidth !== undefined
 
   const header = new ByteWriter()
-  // 비트 31이 리스트의 마지막 문단을 표시한다. 라이터가 아래에서 설정한다.
-  header.uint32(encoded.codes.length)
+  // 비트 31은 이 문단이 현재 문단 리스트의 마지막임을 표시한다.
+  header.uint32((encoded.codes.length | (lastInList ? 0x80000000 : 0)) >>> 0)
   header.uint32(encoded.controlMask)
   header.uint16(paragraph.paraShapeId)
   header.uint8(paragraph.styleId)
@@ -844,8 +887,9 @@ function writeParagraph(
 
   header.uint16(encoded.charShapes.length)
   header.uint16(0) // range tag count
-  header.uint16(0) // line align count — Hangul recomputes the layout cache
+  header.uint16(hasLineSegment ? 1 : 0)
   header.uint32(paragraph.id ?? 0)
+  header.uint16(0) // track-change merge flag (5.0.3.2+)
 
   writer.nested(SectionTag.ParaHeader, header, () => {
     const text = new ByteWriter()
@@ -858,6 +902,15 @@ function writeParagraph(
       shapes.uint32(entry.charShapeId)
     }
     writer.write(SectionTag.ParaCharShape, shapes)
+
+    if (hasLineSegment) {
+      const lineHeight = table?.placement.height ?? 1300
+      writer.write(SectionTag.ParaLineSeg, new ByteWriter()
+        .uint32(0).int32(0)
+        .int32(lineHeight).int32(lineHeight)
+        .int32(table ? lineHeight : 1100).int32(table ? 600 : 780)
+        .int32(0).int32(cellWidth ?? 0).uint32(0x00060000))
+    }
 
     for (const { control } of encoded.extended) {
       writeControl(writer, doc, control, sectionForDefinition)
@@ -873,6 +926,10 @@ function writeControl(
 ): void {
   if (control.type === 'unknown' && control.ctrlId === CtrlId.SectionDefinition && section) {
     writeSectionDefinition(writer, section)
+    return
+  }
+  if (control.type === 'unknown' && control.ctrlId === CtrlId.ColumnDefinition && section) {
+    writeColumnDefinition(writer, section)
     return
   }
 
@@ -933,9 +990,9 @@ function writeControl(
 }
 
 function writeNestedParagraphs(writer: RecordWriter, doc: HwpDocument, paragraphs: Paragraph[]): void {
-  const listHeader = new ByteWriter().int32(paragraphs.length).uint32(0)
+  const listHeader = new ByteWriter().uint16(paragraphs.length).uint32(0)
   writer.nested(SectionTag.ListHeader, listHeader, () => {
-    for (const paragraph of paragraphs) writeParagraph(writer, doc, paragraph)
+    paragraphs.forEach((paragraph, index) => writeParagraph(writer, doc, paragraph, undefined, index === paragraphs.length - 1))
   })
 }
 
@@ -952,6 +1009,7 @@ function writeSectionDefinition(writer: RecordWriter, section: Section): void {
   header.uint16(0)
   header.uint16(0)
   header.uint16(0)
+  header.uint16(0) // representative language (5.0.1.5+)
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
     const { pageDef } = section
@@ -974,27 +1032,48 @@ function writeSectionDefinition(writer: RecordWriter, section: Section): void {
     writer.write(SectionTag.PageDef, page)
 
     // 한글이 파일을 열려면 각주와 미주 모양이 반드시 있어야 한다.
-    writer.write(SectionTag.FootnoteShape, noteShapeBytes())
-    writer.write(SectionTag.FootnoteShape, noteShapeBytes())
+    writer.write(SectionTag.FootnoteShape, noteShapeBytes(false))
+    writer.write(SectionTag.FootnoteShape, noteShapeBytes(true))
+    for (let page = 0; page < 3; page++) {
+      writer.write(SectionTag.PageBorderFill, new ByteWriter()
+        .uint32(1)
+        .int16(1417).int16(1417).int16(1417).int16(1417)
+        .uint16(0))
+    }
   })
 }
 
-function noteShapeBytes(): ByteWriter {
+function writeColumnDefinition(writer: RecordWriter, section: Section): void {
+  const count = section.columnDef?.count ?? 1
+  let properties = 0
+  properties = setBits(properties, 0, 1, section.columnDef?.kind ?? 0)
+  properties = setBits(properties, 2, 9, count)
+  properties = setBit(properties, 12, section.columnDef?.sameWidth ?? true)
+  writer.write(SectionTag.CtrlHeader, new ByteWriter()
+    .uint32(writeCtrlId(CtrlId.ColumnDefinition))
+    .uint16(properties)
+    .uint16(section.columnDef?.gap ?? 0)
+    .uint16(0)
+    .uint8(0).uint8(0).color(0))
+}
+
+function noteShapeBytes(endnote: boolean): ByteWriter {
+  // 사용자 기호, 앞/뒤 장식, 시작 번호 뒤에는 HWPUNIT16 간격 값이 온다.
+  // 한글이 쓴 파일은 28바이트이며 마지막 색상까지 이 순서로 저장한다.
   return new ByteWriter()
     .uint32(0) // properties
-    .uint16(0x0029) // user character / prefix
-    .uint16(0x0029)
-    .uint16(0)
+    .uint16(0) // user character
+    .uint16(0) // prefix
+    .uint16(0x0029) // suffix
     .uint16(1) // start number
-    .hwpUnit(0)
-    .uint32(0)
-    .uint8(0)
-    .uint8(0)
-    .color(0)
+    .hwpUnit16(endnote ? 12280 : -1)
+    .hwpUnit16(endnote ? 224 : -1)
     .hwpUnit16(850)
     .hwpUnit16(567)
-    .hwpUnit16(283)
-    .uint16(0)
+    .hwpUnit16(endnote ? 0 : 283)
+    .uint8(1) // separator style
+    .uint8(1) // separator width
+    .color(0) // separator color
 }
 
 function writeTable(
@@ -1003,7 +1082,7 @@ function writeTable(
   table: Extract<Control, { type: 'table' }>,
 ): void {
   const header = new ByteWriter().uint32(writeCtrlId(CtrlId.Table))
-  writeObjectPlacement(header, table.placement)
+  writeObjectPlacement(header, table.placement, 2)
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
     const body = new ByteWriter()
@@ -1032,11 +1111,12 @@ function writeTable(
 
 function writeTableCell(writer: RecordWriter, doc: HwpDocument, cell: TableCell): void {
   const header = new ByteWriter()
-  header.int32(cell.paragraphs.length)
+  header.uint16(cell.paragraphs.length)
 
-  let properties = 0
+  let properties = 0x00200000
   properties = setBits(properties, 5, 6, CELL_VERTICAL_ALIGN_TO_WIRE[cell.verticalAlign ?? VerticalAlign.Top] ?? 0)
   header.uint32(properties)
+  header.uint16(1)
 
   header.uint16(cell.col)
   header.uint16(cell.row)
@@ -1049,9 +1129,11 @@ function writeTableCell(writer: RecordWriter, doc: HwpDocument, cell: TableCell)
   header.uint16(cell.margins?.top ?? 0)
   header.uint16(cell.margins?.bottom ?? 0)
   header.uint16((cell.borderFillId ?? 0) + 1)
+  header.uint32(cell.width).bytes(new Uint8Array(9))
 
-  writer.nested(SectionTag.ListHeader, header, () => {
-    for (const paragraph of cell.paragraphs) writeParagraph(writer, doc, paragraph)
+  writer.write(SectionTag.ListHeader, header)
+  cell.paragraphs.forEach((paragraph, index) => {
+    writeParagraph(writer, doc, paragraph, undefined, index === cell.paragraphs.length - 1, cell.width)
   })
 }
 
@@ -1061,7 +1143,7 @@ function writePicture(
   picture: Extract<Control, { type: 'picture' }>,
 ): void {
   const header = new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject))
-  writeObjectPlacement(header, picture.placement)
+  writeObjectPlacement(header, picture.placement, 1)
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
     const shape = new ByteWriter()
@@ -1096,18 +1178,23 @@ function writePicture(
 function writeObjectPlacement(
   writer: ByteWriter,
   placement: Extract<Control, { type: 'table' }>['placement'],
+  objectKind: number,
 ): void {
   let properties = 0
   properties = setBit(properties, 0, placement.treatAsChar)
   properties = setBit(properties, 2, placement.affectLineSpacing)
-  properties = setBits(properties, 3, 4, placement.vertRelTo)
+  // 모델의 Paragraph는 3이지만 HWP 세로 기준에서 문단은 2다.
+  properties = setBits(properties, 3, 4, placement.vertRelTo === RelativeTo.Paragraph ? 2 : placement.vertRelTo)
   properties = setBits(properties, 5, 7, placement.vertAlign ?? 0)
   properties = setBits(properties, 8, 9, placement.horzRelTo)
   properties = setBits(properties, 10, 12, placement.horzAlign ?? 0)
-  properties = setBit(properties, 13, placement.flowWithText)
+  properties = setBit(properties, 13, placement.flowWithText ?? objectKind === 2)
   properties = setBit(properties, 14, placement.allowOverlap)
-  properties = setBits(properties, 21, 23, placement.textWrap ?? 0)
+  properties = setBits(properties, 15, 17, placement.widthCriterion ?? 4)
+  properties = setBits(properties, 18, 19, placement.heightCriterion ?? 2)
+  properties = setBits(properties, 21, 23, placement.textWrap ?? (objectKind === 2 ? 1 : 0))
   properties = setBits(properties, 24, 25, placement.textFlowSide ?? 0)
+  properties = setBits(properties, 26, 28, objectKind)
 
   writer.uint32(properties)
   writer.int32(placement.offsetY)
@@ -1120,4 +1207,6 @@ function writeObjectPlacement(
   writer.int16(placement.marginLeft ?? 0)
   writer.int16(placement.marginRight ?? 0)
   writer.uint32(placement.instanceId ?? 0)
+  writer.int32(0) // prevent page break
+  writer.uint16(0) // description length
 }

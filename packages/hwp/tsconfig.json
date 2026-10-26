@@ -11,9 +11,6 @@
   ],
   "references": [
     {
-      "path": "../cfb"
-    },
-    {
       "path": "../core"
     }
   ]

@@ -7,8 +7,8 @@
  * `Contents/header.xml` 안의 `<hh:charPr>`, `<hh:paraPr>` 등으로 나타난다.
  */
 
-import type { Rgb } from './color.js'
-import type { HwpUnit, SHwpUnit } from './units.js'
+import type { Rgb } from "./color.js";
+import type { HwpUnit, SHwpUnit } from "./units.js";
 
 /**
  * HWP는 글꼴을 문자 체계별로 해석한다. 글자 모양의 모든 언어별 배열이 이
@@ -24,20 +24,20 @@ export enum Lang {
   User = 6,
 }
 
-export const LANG_COUNT = 7
+export const LANG_COUNT = 7;
 export const LANG_NAMES = [
-  'hangul',
-  'latin',
-  'hanja',
-  'japanese',
-  'other',
-  'symbol',
-  'user',
-] as const
-export type LangName = (typeof LANG_NAMES)[number]
+  "hangul",
+  "latin",
+  "hanja",
+  "japanese",
+  "other",
+  "symbol",
+  "user",
+] as const;
+export type LangName = (typeof LANG_NAMES)[number];
 
 /** {@link Lang}마다 항목 하나씩, 7개짜리 튜플. */
-export type PerLang<T> = [T, T, T, T, T, T, T]
+export type PerLang<T> = [T, T, T, T, T, T, T];
 
 export const perLang = <T>(value: T): PerLang<T> => [
   value,
@@ -47,7 +47,7 @@ export const perLang = <T>(value: T): PerLang<T> => [
   value,
   value,
   value,
-]
+];
 
 // ---------------------------------------------------------------------------
 // 글꼴
@@ -61,29 +61,29 @@ export enum FontFamilyKind {
 
 /** HWPTAG_FACE_NAME이 담는 Panose-1 방식 분류. */
 export interface TypeInfo {
-  fontFamily: number
-  serifStyle: number
-  weight: number
-  proportion: number
-  contrast: number
-  strokeVariation: number
-  armStyle: number
-  letterform: number
-  midline: number
-  xHeight: number
+  fontFamily: number;
+  serifStyle: number;
+  weight: number;
+  proportion: number;
+  contrast: number;
+  strokeVariation: number;
+  armStyle: number;
+  letterform: number;
+  midline: number;
+  xHeight: number;
 }
 
 export interface FontFace {
   /** 저장된 그대로의 글꼴 이름. 예: `함초롬바탕`, `맑은 고딕`. */
-  name: string
+  name: string;
   /** 글꼴 종류 힌트. 현대 문서 대부분은 `Ttf`다. */
-  kind?: FontFamilyKind
+  kind?: FontFamilyKind;
   /** {@link name}을 쓸 수 없을 때 쓰는 글꼴. */
-  substituteFont?: { name: string; kind: FontFamilyKind }
+  substituteFont?: { name: string; kind: FontFamilyKind };
   /** 한글이 시각적 대체 글꼴을 고를 때 쓰는 Panose 계열 메트릭. */
-  typeInfo?: TypeInfo
+  typeInfo?: TypeInfo;
   /** "기본 글꼴" 메커니즘을 위한 기본 글꼴 이름. */
-  baseFont?: string
+  baseFont?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,16 +126,16 @@ export enum LineWidth {
 }
 
 export interface BorderLine {
-  style: LineStyle
-  width: LineWidth
-  color: Rgb
+  style: LineStyle;
+  width: LineWidth;
+  color: Rgb;
 }
 
 export const NO_BORDER: BorderLine = {
   style: LineStyle.None,
   width: LineWidth.W0_1mm,
   color: 0x000000,
-}
+};
 
 export enum FillKind {
   None = 0,
@@ -155,12 +155,12 @@ export enum HatchStyle {
 }
 
 export interface ColorFill {
-  kind: FillKind.Color
-  background: Rgb
+  kind: FillKind.Color;
+  background: Rgb;
   /** 배경 위에 그려지는 해치 무늬. 있을 때만. */
-  pattern?: { style: HatchStyle; color: Rgb }
+  pattern?: { style: HatchStyle; color: Rgb };
   /** 0-100. 최신 한글이 적용하는 알파. */
-  alpha?: number
+  alpha?: number;
 }
 
 export enum GradientKind {
@@ -171,19 +171,19 @@ export enum GradientKind {
 }
 
 export interface GradientFill {
-  kind: FillKind.Gradient
-  type: GradientKind
+  kind: FillKind.Gradient;
+  type: GradientKind;
   /** 도 단위, 0-360. */
-  angle: number
+  angle: number;
   /** 중심. 각 축에서 0-100. */
-  centerX: number
-  centerY: number
+  centerX: number;
+  centerY: number;
   /** 번짐/단계 수, 0-100. */
-  step: number
-  colors: Rgb[]
+  step: number;
+  colors: Rgb[];
   /** 각 색 정지점의 위치, 0-100. 균등 분포면 생략한다. */
-  stops?: number[]
-  alpha?: number
+  stops?: number[];
+  alpha?: number;
 }
 
 export enum ImageFillMode {
@@ -213,23 +213,23 @@ export enum ImageEffect {
 }
 
 export interface ImageFill {
-  kind: FillKind.Image
-  mode: ImageFillMode
-  effect?: ImageEffect
+  kind: FillKind.Image;
+  mode: ImageFillMode;
+  effect?: ImageEffect;
   /** {@link HwpDocument.binData}의 인덱스. */
-  binDataId: number
-  brightness?: number
-  contrast?: number
-  alpha?: number
+  binDataId: number;
+  brightness?: number;
+  contrast?: number;
+  alpha?: number;
 }
 
 export interface NoFill {
-  kind: FillKind.None
+  kind: FillKind.None;
 }
 
-export type Fill = NoFill | ColorFill | GradientFill | ImageFill
+export type Fill = NoFill | ColorFill | GradientFill | ImageFill;
 
-export const NO_FILL: NoFill = { kind: FillKind.None }
+export const NO_FILL: NoFill = { kind: FillKind.None };
 
 export enum DiagonalKind {
   None = 0,
@@ -242,17 +242,17 @@ export enum DiagonalKind {
  * 테두리와 채우기의 쌍. 셀, 문단, 쪽, 도형이 전부 인덱스로 이것을 참조한다.
  */
 export interface BorderFill {
-  left: BorderLine
-  right: BorderLine
-  top: BorderLine
-  bottom: BorderLine
-  diagonal?: { kind: DiagonalKind; line: BorderLine }
-  fill: Fill
+  left: BorderLine;
+  right: BorderLine;
+  top: BorderLine;
+  bottom: BorderLine;
+  diagonal?: { kind: DiagonalKind; line: BorderLine };
+  fill: Fill;
   /** 3D 테두리 효과. */
-  threeD?: boolean
-  shadow?: boolean
+  threeD?: boolean;
+  shadow?: boolean;
   /** 슬래시/백슬래시와 만나는 자리에서 테두리를 끊는다. */
-  breakCellSeparateLine?: boolean
+  breakCellSeparateLine?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,38 +307,38 @@ export enum EmphasisMark {
  */
 export interface CharShape {
   /** 언어별 글꼴 인덱스. {@link HwpDocument.fonts}를 가리킨다. */
-  fontIds: PerLang<number>
+  fontIds: PerLang<number>;
   /** 장평, 퍼센트 (50-200). */
-  ratios: PerLang<number>
+  ratios: PerLang<number>;
   /** 자간, 퍼센트 (-50..50). */
-  spacings: PerLang<number>
+  spacings: PerLang<number>;
   /** 상대 크기, 퍼센트 (10-250). */
-  relSizes: PerLang<number>
+  relSizes: PerLang<number>;
   /** 기준선 오프셋, 퍼센트 (-100..100). */
-  offsets: PerLang<number>
+  offsets: PerLang<number>;
 
   /** HWPUNIT 기준 크기. 11pt 글꼴이면 `pt(11)`을 쓴다. */
-  height: HwpUnit
+  height: HwpUnit;
 
-  bold?: boolean
-  italic?: boolean
-  underline?: { kind: UnderlineKind; style: LineStyle; color: Rgb }
-  strikeout?: { kind: StrikeoutKind; style: LineStyle; color: Rgb }
-  outline?: OutlineKind
-  shadow?: { kind: ShadowKind; color: Rgb; offsetX: number; offsetY: number }
-  emboss?: boolean
-  engrave?: boolean
-  superscript?: boolean
-  subscript?: boolean
-  emphasis?: EmphasisMark
+  bold?: boolean;
+  italic?: boolean;
+  underline?: { kind: UnderlineKind; style: LineStyle; color: Rgb };
+  strikeout?: { kind: StrikeoutKind; style: LineStyle; color: Rgb };
+  outline?: OutlineKind;
+  shadow?: { kind: ShadowKind; color: Rgb; offsetX: number; offsetY: number };
+  emboss?: boolean;
+  engrave?: boolean;
+  superscript?: boolean;
+  subscript?: boolean;
+  emphasis?: EmphasisMark;
   /** 한글과 라틴 문자 사이의 공백 압축을 적용한다. */
-  useFontSpace?: boolean
-  useKerning?: boolean
+  useFontSpace?: boolean;
+  useKerning?: boolean;
 
-  textColor: Rgb
-  shadeColor: Rgb
+  textColor: Rgb;
+  shadeColor: Rgb;
   /** 테두리를 두른 글자를 위한 {@link HwpDocument.borderFills} 인덱스. */
-  borderFillId?: number
+  borderFillId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,59 +392,59 @@ export enum HeadingKind {
 
 export interface ParagraphBorder {
   /** {@link HwpDocument.borderFills}의 인덱스. */
-  borderFillId: number
-  offsetLeft: HwpUnit
-  offsetRight: HwpUnit
-  offsetTop: HwpUnit
-  offsetBottom: HwpUnit
+  borderFillId: number;
+  offsetLeft: HwpUnit;
+  offsetRight: HwpUnit;
+  offsetTop: HwpUnit;
+  offsetBottom: HwpUnit;
   /** 연속된 문단들의 테두리를 하나의 상자로 그린다. */
-  connect?: boolean
+  connect?: boolean;
   /** 그릴 때 문단 여백을 무시한다. */
-  ignoreMargin?: boolean
+  ignoreMargin?: boolean;
 }
 
 export interface ParaShape {
-  align: Align
+  align: Align;
   /** 왼쪽 들여쓰기, HWPUNIT. */
-  marginLeft: SHwpUnit
-  marginRight: SHwpUnit
+  marginLeft: SHwpUnit;
+  marginRight: SHwpUnit;
   /** 첫 줄 들여쓰기. 음수면 내어쓰기가 된다. */
-  indent: SHwpUnit
-  marginTop: SHwpUnit
-  marginBottom: SHwpUnit
+  indent: SHwpUnit;
+  marginTop: SHwpUnit;
+  marginBottom: SHwpUnit;
 
-  lineSpacing: { kind: LineSpacingKind; value: number }
+  lineSpacing: { kind: LineSpacingKind; value: number };
 
-  lineBreakLatin?: LineBreakLatin
-  lineBreakHangul?: LineBreakHangul
+  lineBreakLatin?: LineBreakLatin;
+  lineBreakHangul?: LineBreakHangul;
 
   /** {@link HwpDocument.tabDefs}의 인덱스. */
-  tabDefId?: number
+  tabDefId?: number;
   /** {@link headingKind}에 따라 번호 매기기 또는 글머리표의 인덱스. */
-  headingKind?: HeadingKind
-  headingId?: number
-  headingLevel?: number
+  headingKind?: HeadingKind;
+  headingId?: number;
+  headingLevel?: number;
 
-  border?: ParagraphBorder
+  border?: ParagraphBorder;
 
   /** 이 문단을 다음 문단과 같은 쪽에 유지한다. */
-  keepWithNext?: boolean
+  keepWithNext?: boolean;
   /** 이 문단을 쪽 경계로 절대 나누지 않는다. */
-  keepLines?: boolean
+  keepLines?: boolean;
   /** 이 문단 앞에서 쪽 나눔을 강제한다. */
-  pageBreakBefore?: boolean
+  pageBreakBefore?: boolean;
   /** 쪽 경계에 홀로 남는 첫 줄/끝 줄을 막는다. */
-  widowOrphan?: boolean
+  widowOrphan?: boolean;
   /** 텍스트를 문서 격자에 맞춘다. */
-  snapToGrid?: boolean
+  snapToGrid?: boolean;
   /** 조금 긴 마지막 줄을 앞 줄로 밀어 넣는다. */
-  condense?: number
-  verticalAlign?: VerticalAlign
+  condense?: number;
+  verticalAlign?: VerticalAlign;
   /** 계산된 줄 높이 대신 글꼴 자체의 줄 높이를 쓴다. */
-  fontLineHeight?: boolean
+  fontLineHeight?: boolean;
   /** 한글과 라틴 문자 / 숫자 사이의 자동 자간 조절을 끈다. */
-  autoSpaceLatin?: boolean
-  autoSpaceNumber?: boolean
+  autoSpaceLatin?: boolean;
+  autoSpaceNumber?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -459,17 +459,17 @@ export enum TabKind {
 }
 
 export interface TabStop {
-  position: HwpUnit
-  kind: TabKind
-  fillStyle: LineStyle
+  position: HwpUnit;
+  kind: TabKind;
+  fillStyle: LineStyle;
 }
 
 export interface TabDef {
   /** 문단의 왼쪽 들여쓰기 위치에 자동 탭 정지. */
-  autoTabLeft?: boolean
+  autoTabLeft?: boolean;
   /** 문단의 오른쪽 들여쓰기 위치에 자동 탭 정지. */
-  autoTabRight?: boolean
-  stops: TabStop[]
+  autoTabRight?: boolean;
+  stops: TabStop[];
 }
 
 // ---------------------------------------------------------------------------
@@ -501,34 +501,39 @@ export enum NumberFormat {
 /** 번호 정의의 개요 수준 하나. */
 export interface NumberingLevel {
   /** 예: `^1.` — `^1`..`^7`이 해당 수준의 카운터를 끼워 넣는다. */
-  format: string
-  numberFormat: NumberFormat
-  align: Align
+  format: string;
+  numberFormat: NumberFormat;
+  align: Align;
   /** 번호에서 텍스트까지의 거리. 비율(퍼센트) 또는 폭. */
-  widthAdjust: number
+  widthAdjust: number;
   /** 번호 뒤에서 텍스트가 들여쓰기되는 거리. */
-  distance: number
+  distance: number;
   /** {@link distance}를 번호 폭에 대한 퍼센트로 취급한다. */
-  distanceIsRatio?: boolean
+  distanceIsRatio?: boolean;
   /** 상위 수준의 번호를 포함한다. 예: `1.2.3`. */
-  includeUpperLevels?: boolean
+  includeUpperLevels?: boolean;
   /** 이 수준에서 번호를 다시 시작한다. */
-  startNumber?: number
-  charShapeId?: number
+  startNumber?: number;
+  charShapeId?: number;
 }
 
 export interface Numbering {
-  levels: NumberingLevel[]
-  startNumber?: number
+  levels: NumberingLevel[];
+  startNumber?: number;
 }
 
 export interface Bullet {
   /** 글머리표 문자 자체. 예: `•`. */
-  char: string
+  char: string;
   /** {@link char} 대신 이미지를 쓴다. */
-  image?: { binDataId: number; brightness?: number; contrast?: number; effect?: ImageEffect }
-  checkedChar?: string
-  level: NumberingLevel
+  image?: {
+    binDataId: number;
+    brightness?: number;
+    contrast?: number;
+    effect?: ImageEffect;
+  };
+  checkedChar?: string;
+  level: NumberingLevel;
 }
 
 // ---------------------------------------------------------------------------
@@ -541,18 +546,18 @@ export enum StyleKind {
 }
 
 export interface Style {
-  name: string
-  englishName: string
-  kind: StyleKind
+  name: string;
+  englishName: string;
+  kind: StyleKind;
   /** {@link HwpDocument.paraShapes}의 인덱스. */
-  paraShapeId: number
+  paraShapeId: number;
   /** {@link HwpDocument.charShapes}의 인덱스. */
-  charShapeId: number
+  charShapeId: number;
   /** 끝에서 엔터를 눌러 만들어지는 문단에 적용되는 스타일. */
-  nextStyleId: number
+  nextStyleId: number;
   /** LCID. 예: ko-KR은 1042. */
-  langId?: number
-  lockForm?: boolean
+  langId?: number;
+  lockForm?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -569,16 +574,16 @@ export enum BinDataKind {
 }
 
 export interface BinDataItem {
-  kind: BinDataKind
+  kind: BinDataKind;
   /** 점을 뺀 파일 확장자. 예: `png`, `jpg`, `ole`. */
-  extension: string
+  extension: string;
   /** {@link BinDataKind.Embedding}과 `Storage`일 때 존재한다. */
-  data?: Uint8Array
+  data?: Uint8Array;
   /** {@link BinDataKind.Link}일 때 존재한다. */
-  absolutePath?: string
-  relativePath?: string
+  absolutePath?: string;
+  relativePath?: string;
   /** 페이로드가 컨테이너 안에서 deflate 압축돼 있으면 true. */
-  compressed?: boolean
+  compressed?: boolean;
   /** HWPX가 쓰는 안정적인 id(`binaryItemIDRef`). HWP 5를 쓸 때는 유도한다. */
-  id?: string
+  id?: string;
 }

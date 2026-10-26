@@ -277,15 +277,14 @@ const readBorderLine = (style: number, width: number, color: number): BorderLine
 function readBorderFill(reader: ByteReader): BorderFill {
   const properties = reader.uint16()
 
-  const styles = [reader.uint8(), reader.uint8(), reader.uint8(), reader.uint8()]
-  const widths = [reader.uint8(), reader.uint8(), reader.uint8(), reader.uint8()]
-  const colors = [reader.color(), reader.color(), reader.color(), reader.color()]
+  const lines = Array.from({ length: 4 }, () =>
+    readBorderLine(reader.uint8(), reader.uint8(), reader.color()))
 
   const fill: BorderFill = {
-    left: readBorderLine(styles[0]!, widths[0]!, colors[0]!),
-    right: readBorderLine(styles[1]!, widths[1]!, colors[1]!),
-    top: readBorderLine(styles[2]!, widths[2]!, colors[2]!),
-    bottom: readBorderLine(styles[3]!, widths[3]!, colors[3]!),
+    left: lines[0]!,
+    right: lines[1]!,
+    top: lines[2]!,
+    bottom: lines[3]!,
     fill: { kind: FillKind.None },
     threeD: bit(properties, 0),
     shadow: bit(properties, 1),
@@ -584,31 +583,31 @@ export function serializeDocInfo(doc: HwpDocument): Uint8Array {
   const writer = new RecordWriter()
 
   writer.write(DocInfoTag.DocumentProperties, writeDocumentProperties(doc))
-  writer.write(DocInfoTag.IdMappings, writeIdMappings(doc))
+  writer.nested(DocInfoTag.IdMappings, writeIdMappings(doc), () => {
+    doc.binData.forEach((item, index) => {
+      writer.write(DocInfoTag.BinData, writeBinData(item, index))
+    })
 
-  doc.binData.forEach((item, index) => {
-    writer.write(DocInfoTag.BinData, writeBinData(item, index))
+    // 모든 문자 체계가 같은 글꼴 목록을 받으므로, 어느 언어 슬롯이 참조하든 글꼴
+    // id는 같은 글꼴을 뜻한다.
+    for (let slot = 0; slot < 7; slot++) {
+      for (const font of doc.fonts) writer.write(DocInfoTag.FaceName, writeFaceName(font))
+    }
+
+    for (const fill of doc.borderFills) writer.write(DocInfoTag.BorderFill, writeBorderFill(fill))
+    for (const shape of doc.charShapes) writer.write(DocInfoTag.CharShape, writeCharShape(shape))
+    for (const def of doc.tabDefs) writer.write(DocInfoTag.TabDef, writeTabDef(def))
+    for (const numbering of doc.numberings) {
+      writer.write(DocInfoTag.Numbering, writeNumbering(numbering))
+    }
+    for (const bullet of doc.bullets) writer.write(DocInfoTag.Bullet, writeBullet(bullet))
+    for (const shape of doc.paraShapes) writer.write(DocInfoTag.ParaShape, writeParaShape(shape))
+    for (const style of doc.styles) writer.write(DocInfoTag.Style, writeStyle(style))
+
+    for (const record of doc.preserved?.docInfoTail ?? []) {
+      writer.write(record.tagId, record.payload)
+    }
   })
-
-  // 모든 문자 체계가 같은 글꼴 목록을 받으므로, 어느 언어 슬롯이 참조하든 글꼴
-  // id는 같은 글꼴을 뜻한다.
-  for (let slot = 0; slot < 7; slot++) {
-    for (const font of doc.fonts) writer.write(DocInfoTag.FaceName, writeFaceName(font))
-  }
-
-  for (const fill of doc.borderFills) writer.write(DocInfoTag.BorderFill, writeBorderFill(fill))
-  for (const shape of doc.charShapes) writer.write(DocInfoTag.CharShape, writeCharShape(shape))
-  for (const def of doc.tabDefs) writer.write(DocInfoTag.TabDef, writeTabDef(def))
-  for (const numbering of doc.numberings) {
-    writer.write(DocInfoTag.Numbering, writeNumbering(numbering))
-  }
-  for (const bullet of doc.bullets) writer.write(DocInfoTag.Bullet, writeBullet(bullet))
-  for (const shape of doc.paraShapes) writer.write(DocInfoTag.ParaShape, writeParaShape(shape))
-  for (const style of doc.styles) writer.write(DocInfoTag.Style, writeStyle(style))
-
-  for (const record of doc.preserved?.docInfoTail ?? []) {
-    writer.write(record.tagId, record.payload)
-  }
 
   return writer.finish()
 }
@@ -717,9 +716,7 @@ function writeBorderFill(fill: BorderFill): ByteWriter {
   writer.uint16(properties)
 
   const lines = [fill.left, fill.right, fill.top, fill.bottom]
-  for (const line of lines) writer.uint8(line.style)
-  for (const line of lines) writer.uint8(line.width)
-  for (const line of lines) writer.color(line.color)
+  for (const line of lines) writer.uint8(line.style).uint8(line.width).color(line.color)
 
   const diagonal = fill.diagonal?.line
   writer.uint8(diagonal?.style ?? LineStyle.None)
@@ -747,8 +744,9 @@ function writeBorderFill(fill: BorderFill): ByteWriter {
   } else {
     writer.uint32(0)
   }
-  // 5.0.2.5 이후가 쓰는 후행 "추가 채우기 공간" 바이트.
-  writer.uint8(0)
+  // 채우기 종류와 관계없이 추가 채우기 속성의 길이(DWORD)가 먼저 온다.
+  writer.uint32(0)
+  if (value.kind !== FillKind.None) writer.uint8(0) // 채우기가 있을 때의 중심값
 
   return writer
 }

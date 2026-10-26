@@ -24,12 +24,12 @@ import { DocumentBuilder, save } from "js-hwp";
 const doc = new DocumentBuilder()
   .meta({ title: "분기 보고서", author: "홍길동" })
   .page({ paper: "A4", margins: { left: "30mm", right: "30mm" } })
-  .heading(1, "1. 개요")
+  .heading(1, "개요")
   .paragraph("올해 3분기 실적을 정리한 문서입니다.")
   .paragraph((p) =>
     p.text("매출은 ").bold("전년 대비 12% 증가").text("했습니다."),
   )
-  .heading(2, "1.1 항목별 실적")
+  .heading(2, "항목별 실적")
   .table(
     [
       ["항목", "금액"],
@@ -134,3 +134,22 @@ js-hwp html     report.hwp -o report.html
 js-hwp convert  report.hwp -o report.hwpx
 js-hwp replace  template.hwp -o out.hwp '{{날짜}}' '2026-08-04'
 ```
+
+## HWP 5 개발을 처음 시작한다면
+
+[한컴의 HWP 5.0 파일 형식 명세서(개정 1.3)](https://cdn.hancom.com/link/docs/%ED%95%9C%EA%B8%80%EB%AC%B8%EC%84%9C%ED%8C%8C%EC%9D%BC%ED%98%95%EC%8B%9D_5.0_revision1.3.pdf)를
+옆에 두고 아래 순서대로 같은 구조의 코드를 읽으면 된다.
+
+| 순서 | 명세서에서 볼 것 | 이 저장소에서 볼 것 |
+| --- | --- | --- |
+| 1 | 3장 파일 구조, `FileHeader`, `DocInfo`, `BodyText` 스트림 | `packages/hwp/src/document.ts`, `fileheader.ts`, `compress.ts` |
+| 2 | 4.1절 레코드 헤더의 태그·레벨·크기 | `packages/hwp/src/record.ts`, `tags.ts`, `bytes.ts` |
+| 3 | 4.2절 문서 정보의 글꼴·글자 모양·문단 모양·테두리 | `packages/hwp/src/docinfo.ts`, `packages/core/src/model/docinfo.ts` |
+| 4 | 4.3절 본문의 문단·문자·컨트롤·표 | `packages/hwp/src/bodytext.ts`, `packages/core/src/model/controls.ts` |
+| 5 | 고수준 API에서 저장까지의 연결 | `packages/core/src/builder.ts` → `packages/js-hwp/src/index.ts` → `packages/hwp/src/document.ts` |
+
+가장 작은 실습은 `new DocumentBuilder().paragraph("안녕하세요").build()`를
+`save(doc, "hwp")`로 저장하고, `BodyText/Section0`를 `parseRecords()`로 읽어
+`ParaHeader`·`ParaText`의 태그, 레벨, 바이트 길이를 명세서와 비교하는 것이다.
+그다음 한글에서 같은 문서를 열어 본다. 라이브러리의 자체 왕복 테스트만으로는
+한글 호환성을 증명할 수 없기 때문이다.
