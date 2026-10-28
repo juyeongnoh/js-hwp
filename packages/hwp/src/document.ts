@@ -24,6 +24,16 @@ import {
   serializeFileHeader,
 } from "./fileheader.js";
 
+// cfb 라이브러리의 entry.type 값.
+enum CfbEntryType {
+  Unknown = 0,
+  Storage = 1,
+  Stream = 2,
+  LockBytes = 3,
+  Property = 4,
+  Root = 5,
+}
+
 export interface ParseHwpOptions {
   /** 임베드된 바이너리를 메모리에 유지한다. 기본값 `true`. */
   loadBinData?: boolean;
@@ -64,7 +74,7 @@ function getStream(
   path: string,
 ): Uint8Array | undefined {
   const entry = findCfb(container, `/${path}`);
-  return entry?.type === 2 ? toUint8Array(entry) : undefined;
+  return entry?.type === CfbEntryType.Stream ? toUint8Array(entry) : undefined;
 }
 
 function listEntries(
@@ -162,7 +172,8 @@ export function parseHwp(
 
   if (options.loadBinData !== false) {
     for (const { path, entry } of entries) {
-      if (!isUnder(path, "BinData") || entry.type !== 2) continue;
+      if (!isUnder(path, "BinData") || entry.type !== CfbEntryType.Stream)
+        continue;
       const name = path.slice("BinData/".length);
       const dot = name.lastIndexOf(".");
       const id = dot === -1 ? name : name.slice(0, dot);
@@ -191,7 +202,8 @@ export function parseHwp(
   const sectionPaths = entries
     .filter(
       ({ path, entry }) =>
-        entry.type === 2 && /^BodyText\/Section\d+$/i.test(path),
+        entry.type === CfbEntryType.Stream &&
+        /^BodyText\/Section\d+$/i.test(path),
     )
     .sort((a, b) => sectionNumber(a.path) - sectionNumber(b.path));
 
@@ -224,7 +236,7 @@ export function parseHwp(
   doc.preserved ??= {};
   doc.preserved.streams = {};
   for (const { path, entry } of entries) {
-    if (entry.type !== 2) continue;
+    if (entry.type !== CfbEntryType.Stream) continue;
     if (
       isStream(path, SHEETJS_CFB_MARKER) ||
       isStream(path, "FileHeader") ||
