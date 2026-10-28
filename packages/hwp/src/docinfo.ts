@@ -931,8 +931,8 @@ function writeFill(writer: ByteWriter, fill: Fill): void {
 
   if (fill.kind === FillKind.Color) {
     writer.color(fill.background);
-    writer.color(fill.pattern?.color ?? BLACK);
-    writer.int32(fill.pattern ? fill.pattern.style : -1);
+    writer.color(fill.pattern.color);
+    writer.int32(fill.pattern.style);
   } else if (fill.kind === FillKind.Gradient) {
     writer.uint8(fill.type);
     writer.int32(fill.angle);

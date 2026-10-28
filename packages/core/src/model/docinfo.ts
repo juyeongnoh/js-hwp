@@ -186,8 +186,12 @@ export enum HatchStyle {
 export interface ColorFill {
   kind: FillKind.Color;
   background: Rgb;
-  /** 배경 위에 그려지는 해치 무늬. 있을 때만. */
-  pattern?: { style: HatchStyle; color: Rgb };
+  /**
+   * 배경 위에 그려지는 해치 무늬. 무늬가 없으면 style이 {@link HatchStyle.None}이다.
+   * 그때도 한글은 무늬 색을 파일에 기록하고 나중에 무늬를 고르면 다시 쓰므로
+   * color를 버리지 않는다.
+   */
+  pattern: { style: HatchStyle; color: Rgb };
   /** HWPX winBrush의 alpha를 0-100으로 환산한 값. HWP에는 대응하는 필드가 없다. */
   alpha?: number;
   /**
