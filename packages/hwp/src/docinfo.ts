@@ -249,8 +249,7 @@ function readBinData(reader: ByteReader): BinDataItem {
 
   const id = reader.uint16();
   item.id = `BIN${id.toString(16).toUpperCase().padStart(4, "0")}`;
-  if (type === BinDataType.Embedding)
-    item.extension = reader.optionalString();
+  if (type === BinDataType.Embedding) item.extension = reader.optionalString();
   return item;
 }
 
@@ -260,11 +259,13 @@ function readFaceName(reader: ByteReader): FontFace {
 
   const face: FontFace = { name };
 
+  // 대체 글꼴 존재 여부 (0x80).
   if (bit(properties, 7)) {
     // 대체 글꼴: 종류 바이트 다음 이름.
     const kind = reader.optionalUint8();
     face.substituteFont = { name: reader.optionalString(), kind };
   }
+  // 글꼴 유형 정보 존재 여부 (0x40).
   if (bit(properties, 6)) {
     face.typeInfo = {
       fontFamily: reader.optionalUint8(),
@@ -279,6 +280,7 @@ function readFaceName(reader: ByteReader): FontFace {
       xHeight: reader.optionalUint8(),
     };
   }
+  // 기본 글꼴 존재 여부 (0x20).
   if (bit(properties, 5)) face.baseFont = reader.optionalString();
 
   return face;
