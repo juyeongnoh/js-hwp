@@ -162,6 +162,10 @@ export enum FillKind {
   Image = 3,
 }
 
+/**
+ * 명세 표 29는 1부터 매기지만 실제 값은 0부터다. 한글 파일의 값을 0~6으로 바꿔
+ * 렌더링해 확인했다(6은 무늬 없음). 없음은 -1로 저장된다.
+ */
 export enum HatchStyle {
   None = -1,
   Horizontal = 0,
