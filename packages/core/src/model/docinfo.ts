@@ -90,6 +90,12 @@ export interface FontFace {
 // 테두리 / 채우기
 // ---------------------------------------------------------------------------
 
+/**
+ * 선 종류의 저장값. 실선 이후 값은 HWP 명세 표 25보다 1 크다.
+ * 명세에서 '선 없음 = 0'이 누락된 데 따른 차이로 추정한다.
+ * 실제 macOS 한글에서 0~13을 확인했다. 14~17의 3D 계열은 같은 차이를 적용한
+ * 값이며, 해당 환경에서는 표시되지 않아 시각적으로 검증하지 못했다.
+ */
 export enum LineStyle {
   None = 0,
   Solid = 1,
@@ -103,6 +109,18 @@ export enum LineStyle {
   SlimThick = 9,
   ThickSlim = 10,
   SlimThickSlim = 11,
+  /** 물결. */
+  Wave = 12,
+  /** 물결 2중선. */
+  DoubleWave = 13,
+  /** 두꺼운 3D. */
+  Thick3D = 14,
+  /** 두꺼운 3D (광원 반대). */
+  ThickReverse3D = 15,
+  /** 3D 단선. */
+  ThreeD = 16,
+  /** 3D 단선 (광원 반대). */
+  Reverse3D = 17,
 }
 
 /** HWP가 지원하는 테두리 굵기. 밀리미터 단위이고 열거형 인덱스로 표현한다. */
@@ -231,11 +249,17 @@ export type Fill = NoFill | ColorFill | GradientFill | ImageFill;
 
 export const NO_FILL: NoFill = { kind: FillKind.None };
 
+/** 명세 표 27의 대각선 종류. 일반 테두리선 종류인 LineStyle과 구분한다. */
 export enum DiagonalKind {
-  None = 0,
-  Slash = 1,
-  BackSlash = 2,
-  Cross = 3,
+  Slash = 0,
+  BackSlash = 1,
+  CrookedSlash = 2,
+}
+
+export interface DiagonalLine {
+  kind: DiagonalKind;
+  width: LineWidth;
+  color: Rgb;
 }
 
 /**
@@ -246,12 +270,47 @@ export interface BorderFill {
   right: BorderLine;
   top: BorderLine;
   bottom: BorderLine;
-  diagonal?: { kind: DiagonalKind; line: BorderLine };
+  diagonal?: DiagonalLine;
   fill: Fill;
   /** 3D 테두리 효과. */
   threeD?: boolean;
   shadow?: boolean;
-  /** 슬래시/백슬래시와 만나는 자리에서 테두리를 끊는다. */
+  /**
+   * Slash 대각선 모양 (HWP 표 24, bit 2~4).
+   * 시계 방향으로 각각의 대각선 유무를 나타낸다.
+   * - 0b000 (0): 없음.
+   * - 0b010 (2): slash.
+   * - 0b011 (3): 왼쪽 위 → 아래쪽 변.
+   * - 0b110 (6): 왼쪽 위 → 오른쪽 변.
+   * - 0b111 (7): 왼쪽 위 → 아래쪽 변 및 오른쪽 변.
+   */
+  slashShape?: number;
+  /**
+   * BackSlash 대각선 모양 (HWP 표 24, bit 5~7).
+   * 반시계 방향으로 각각의 대각선 유무를 나타낸다.
+   * - 0b000 (0): 없음.
+   * - 0b010 (2): back slash.
+   * - 0b011 (3): 오른쪽 위 → 아래쪽 변.
+   * - 0b110 (6): 오른쪽 위 → 왼쪽 변.
+   * - 0b111 (7): 오른쪽 위 → 아래쪽 변 및 왼쪽 변.
+   */
+  backSlashShape?: number;
+  /** Slash 꺾은선 유무 (bit 8). macOS 한글의 통제 실험에서 확인했다. */
+  slashCrooked?: boolean;
+  /** BackSlash 꺾은선 유무 (bit 9). macOS 한글의 통제 실험에서 확인했다. */
+  backSlashCrooked?: boolean;
+  /**
+   * 명세 표 24에서 BackSlash 꺾은선으로 정의한 bit 10.
+   * 실제 역할은 미확인이다. 실측한 bit 9와 합치지 않고 별도로 읽고 쓴다.
+   */
+  backSlashCrookedSpec?: boolean;
+  /** Slash 모양 180도 회전 여부 (bit 11). */
+  slashRotated?: boolean;
+  /** BackSlash 모양 180도 회전 여부 (bit 12). */
+  backSlashRotated?: boolean;
+  /** 중심선 유무 (HWP bit 13). */
+  centerLine?: boolean;
+  /** 자동으로 나뉜 표의 경계선 설정. HWPX 속성이며 HWP bit 4와 무관하다. */
   breakCellSeparateLine?: boolean;
 }
 

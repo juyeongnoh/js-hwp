@@ -103,6 +103,12 @@ export const LINE_TYPE = [
   'SLIM_THICK',
   'THICK_SLIM',
   'SLIM_THICK_SLIM',
+  'WAVE',
+  'DOUBLEWAVE',
+  'THICK3D',
+  'THICKREV3D',
+  '3D',
+  'REV3D',
 ] as const
 
 export const LINE_WIDTH = [

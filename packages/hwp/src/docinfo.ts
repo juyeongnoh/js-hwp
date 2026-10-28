@@ -22,6 +22,7 @@ import {
   type BorderLine,
   type Bullet,
   type CharShape,
+  DiagonalKind,
   FillKind,
   type FontFace,
   type HwpDocument,
@@ -311,20 +312,23 @@ function readBorderFill(reader: ByteReader): BorderFill {
     fill: { kind: FillKind.None },
     threeD: bit(properties, 0),
     shadow: bit(properties, 1),
-    breakCellSeparateLine: bit(properties, 4),
+    slashShape: bits(properties, 2, 4),
+    backSlashShape: bits(properties, 5, 7),
+    slashCrooked: bit(properties, 8),
+    backSlashCrooked: bit(properties, 9),
+    backSlashCrookedSpec: bit(properties, 10),
+    slashRotated: bit(properties, 11),
+    backSlashRotated: bit(properties, 12),
+    centerLine: bit(properties, 13),
   };
 
-  // 대각선: 스타일, 굵기, 색.
+  // 대각선: 종류(표 27), 굵기, 색. 일반 테두리선의 LineStyle과 구분한다.
   if (reader.hasMore(6)) {
-    const diagonalStyle = reader.uint8();
-    const diagonalWidth = reader.uint8();
-    const diagonalColor = reader.color();
-    if (diagonalStyle !== LineStyle.None) {
-      fill.diagonal = {
-        kind: 1,
-        line: readBorderLine(diagonalStyle, diagonalWidth, diagonalColor),
-      };
-    }
+    fill.diagonal = {
+      kind: reader.uint8(),
+      width: reader.uint8(),
+      color: reader.color(),
+    };
   }
 
   if (reader.hasMore(4)) {
@@ -754,15 +758,22 @@ function writeBorderFill(fill: BorderFill): ByteWriter {
   let properties = 0;
   properties = setBit(properties, 0, fill.threeD);
   properties = setBit(properties, 1, fill.shadow);
-  properties = setBit(properties, 4, fill.breakCellSeparateLine);
+  properties = setBits(properties, 2, 4, fill.slashShape ?? 0);
+  properties = setBits(properties, 5, 7, fill.backSlashShape ?? 0);
+  properties = setBit(properties, 8, fill.slashCrooked);
+  properties = setBit(properties, 9, fill.backSlashCrooked);
+  properties = setBit(properties, 10, fill.backSlashCrookedSpec);
+  properties = setBit(properties, 11, fill.slashRotated);
+  properties = setBit(properties, 12, fill.backSlashRotated);
+  properties = setBit(properties, 13, fill.centerLine);
   writer.uint16(properties);
 
   const lines = [fill.left, fill.right, fill.top, fill.bottom];
   for (const line of lines)
     writer.uint8(line.style).uint8(line.width).color(line.color);
 
-  const diagonal = fill.diagonal?.line;
-  writer.uint8(diagonal?.style ?? LineStyle.None);
+  const diagonal = fill.diagonal;
+  writer.uint8(diagonal?.kind ?? DiagonalKind.Slash);
   writer.uint8(diagonal?.width ?? 0);
   writer.color(diagonal?.color ?? 0);
 
