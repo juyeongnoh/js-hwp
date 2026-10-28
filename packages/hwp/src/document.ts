@@ -166,6 +166,7 @@ export function parseHwp(
     sections: [],
   });
 
+  // DocInfo
   const docInfo = getStream(container, "DocInfo");
   if (!docInfo) throw new HwpFormatError("DocInfo 스트림이 존재하지 않습니다.");
   parseDocInfo(doc, maybeInflate(docInfo, compressed));
@@ -199,6 +200,7 @@ export function parseHwp(
     }
   }
 
+  // BodyText
   const sectionPaths = entries
     .filter(
       ({ path, entry }) =>
