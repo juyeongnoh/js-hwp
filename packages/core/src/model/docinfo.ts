@@ -573,10 +573,16 @@ export enum BinDataType {
   Storage = 2,
 }
 
+export enum BinDataCompression {
+  Default = 0,
+  Compressed = 1,
+  Uncompressed = 2,
+}
+
 export interface BinDataItem {
   type: BinDataType;
-  /** 점을 뺀 파일 확장자. 예: `png`, `jpg`, `ole`. */
-  extension: string;
+  /** {@link BinDataType.Embedding}일 때 존재한다. 점을 뺀 파일 확장자. 예: `png`, `jpg`, `ole`. */
+  extension?: string;
   /** {@link BinDataType.Embedding}과 {@link BinDataType.Storage}일 때 존재한다. */
   data?: Uint8Array;
   /** {@link BinDataType.Link}일 때 존재한다. */

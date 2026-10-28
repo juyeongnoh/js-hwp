@@ -77,7 +77,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 
 function toDataUri(item: BinDataItem): string | undefined {
   if (!item.data) return undefined
-  const mime = MIME_BY_EXTENSION[item.extension.toLowerCase()] ?? 'application/octet-stream'
+  const mime = MIME_BY_EXTENSION[(item.extension ?? '').toLowerCase()] ?? 'application/octet-stream'
   return `data:${mime};base64,${base64(item.data)}`
 }
 

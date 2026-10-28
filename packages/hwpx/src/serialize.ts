@@ -105,7 +105,7 @@ export function serializeHwpx(doc: HwpDocument, options: SerializeHwpxOptions = 
 
   for (const item of doc.binData) {
     if (!item.data || !item.id) continue
-    files[binDataEntry(`${item.id}.${item.extension}`)] = item.data
+    files[binDataEntry(`${item.id}${item.extension ? `.${item.extension}` : ''}`)] = item.data
   }
 
   if (options.preview !== false) {
@@ -168,8 +168,8 @@ function buildContentHpf(doc: HwpDocument): XmlElement {
     items.push(
       el('opf:item', {
         id: item.id,
-        href: binDataEntry(`${item.id}.${item.extension}`),
-        'media-type': mediaTypeFor(item.extension),
+        href: binDataEntry(`${item.id}${item.extension ? `.${item.extension}` : ''}`),
+        'media-type': mediaTypeFor(item.extension ?? ''),
         isEmbeded: '1',
       }),
     )

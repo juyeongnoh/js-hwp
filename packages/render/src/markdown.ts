@@ -70,9 +70,10 @@ export function renderToMarkdown(doc: HwpDocument, options: MarkdownOptions = {}
         const item = doc.binData[control.binDataId]
         const alt = control.placement.description ?? 'image'
         if (options.inlineImages && item?.data) {
-          return `![${alt}](data:image/${item.extension};base64,${toBase64(item.data)})`
+          const mime = item.extension ? `image/${item.extension}` : 'application/octet-stream'
+          return `![${alt}](data:${mime};base64,${toBase64(item.data)})`
         }
-        return `![${alt}](${item?.id ?? `binData${control.binDataId}`}.${item?.extension ?? 'png'})`
+        return `![${alt}](${item?.id ?? `binData${control.binDataId}`}${item?.extension ? `.${item.extension}` : ''})`
       }
       case 'equation':
         return `$${control.latex ?? control.script}$`

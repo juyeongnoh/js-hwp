@@ -5,7 +5,7 @@
  * 각 `BodyText/Section{N}`.
  */
 
-import { type HwpDocument, createDocument } from "@js-hwp/core";
+import { BinDataType, type HwpDocument, createDocument } from "@js-hwp/core";
 import {
   find as findCfb,
   read as readCfb,
@@ -179,8 +179,8 @@ export function parseHwp(
       if (existing) existing.data = bytes;
       else {
         doc.binData.push({
-          kind: 0,
-          extension: dot === -1 ? "bin" : name.slice(dot + 1),
+          type: BinDataType.Embedding,
+          extension: dot === -1 ? "" : name.slice(dot + 1),
           data: bytes,
           id,
         });
@@ -288,8 +288,8 @@ const sectionNumber = (path: string): number =>
   Number(/(\d+)$/.exec(path)?.[1] ?? 0);
 
 /** HWP는 임베드된 바이너리를 1부터 시작하는 `BIN%04X.ext`로 이름 짓는다. */
-export const binDataStreamName = (index: number, extension: string): string =>
-  `BIN${(index + 1).toString(16).toUpperCase().padStart(4, "0")}.${extension}`;
+export const binDataStreamName = (index: number, extension?: string): string =>
+  `BIN${(index + 1).toString(16).toUpperCase().padStart(4, "0")}${extension ? `.${extension}` : ""}`;
 
 function safeInflate(data: Uint8Array, compressed: boolean): Uint8Array {
   if (!compressed) return data;

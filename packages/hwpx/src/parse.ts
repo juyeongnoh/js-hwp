@@ -128,7 +128,7 @@ export function parseHwpx(
       const dot = file.lastIndexOf(".");
       const item: BinDataItem = {
         type: BinDataType.Embedding,
-        extension: dot === -1 ? "bin" : file.slice(dot + 1),
+        extension: dot === -1 ? "" : file.slice(dot + 1),
         data: bytes,
         id: dot === -1 ? file : file.slice(0, dot),
       };

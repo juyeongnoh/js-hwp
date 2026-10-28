@@ -821,7 +821,7 @@ export class DocumentBuilder {
     const format = options.format ?? sniffImageFormat(data) ?? "png";
     const binDataId = this.#doc.binData.length;
     this.#doc.binData.push({
-      kind: BinDataType.Embedding,
+      type: BinDataType.Embedding,
       extension: format,
       data,
       id: `image${binDataId + 1}`,

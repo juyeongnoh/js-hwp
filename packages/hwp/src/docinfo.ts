@@ -37,6 +37,7 @@ import {
   StyleKind,
   type TabDef,
   UnderlineKind,
+  BinDataCompression,
 } from "@js-hwp/core";
 import { ByteReader, ByteWriter, bit, bits, setBit, setBits } from "./bytes.js";
 import { type HwpRecord, RecordWriter, parseRecords } from "./record.js";
@@ -230,11 +231,14 @@ function readBinData(reader: ByteReader): BinDataItem {
 
   const item: BinDataItem = {
     type,
-    extension: "bin",
     // 0은 "저장소 기본값 따름", 1은 항상, 2는 안 함이다. 0일 때 undefined로
     // 두면 호출자가 FileHeader 플래그로 물러날 수 있다.
     compressed:
-      compression === 1 ? true : compression === 2 ? false : undefined,
+      compression === BinDataCompression.Compressed
+        ? true
+        : compression === BinDataCompression.Uncompressed
+          ? false
+          : undefined,
   };
 
   if (type === BinDataType.Link) {
@@ -243,10 +247,10 @@ function readBinData(reader: ByteReader): BinDataItem {
     return item;
   }
 
-  const id = reader.optionalUint16();
+  const id = reader.uint16();
   item.id = `BIN${id.toString(16).toUpperCase().padStart(4, "0")}`;
   if (type === BinDataType.Embedding)
-    item.extension = reader.optionalString("bin");
+    item.extension = reader.optionalString();
   return item;
 }
 
@@ -706,7 +710,7 @@ function writeBinData(item: BinDataItem, index: number): ByteWriter {
   }
 
   writer.uint16(index + 1);
-  if (item.type === BinDataType.Embedding) writer.string(item.extension);
+  if (item.type === BinDataType.Embedding) writer.string(item.extension ?? "");
   return writer;
 }
 

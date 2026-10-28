@@ -11,6 +11,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "typecheck": "tsc -b --pretty",
+    "typecheck:watch": "tsc -b --pretty --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "editor": "npm run dev -w apps/editor",
