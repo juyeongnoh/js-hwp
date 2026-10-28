@@ -892,9 +892,13 @@ function writeParagraph(
   header.uint16(0) // track-change merge flag (5.0.3.2+)
 
   writer.nested(SectionTag.ParaHeader, header, () => {
-    const text = new ByteWriter()
-    for (const code of encoded.codes) text.uint16(code)
-    writer.write(SectionTag.ParaText, text)
+    // 빈 문단(PARA_BREAK뿐)은 PARA_TEXT를 생략한다. 한글은 그 레코드가 있으면
+    // 파일을 손상됐다고 거부한다. 실제 한글 파일의 빈 문단 26만여 개 모두 생략돼 있었다.
+    if (encoded.codes.length > 1) {
+      const text = new ByteWriter()
+      for (const code of encoded.codes) text.uint16(code)
+      writer.write(SectionTag.ParaText, text)
+    }
 
     const shapes = new ByteWriter()
     for (const entry of encoded.charShapes) {
