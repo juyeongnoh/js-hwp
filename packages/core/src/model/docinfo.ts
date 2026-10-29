@@ -155,13 +155,6 @@ export const NO_BORDER: BorderLine = {
   color: 0x000000,
 };
 
-export enum FillKind {
-  None = 0,
-  Color = 1,
-  Gradient = 2,
-  Image = 3,
-}
-
 /**
  * 명세 표 29는 1부터 매기지만 실제 값은 0부터다. 한글 파일의 값을 0~6으로 바꿔
  * 렌더링해 확인했다(6은 무늬 없음). 없음은 -1로 저장된다.
@@ -177,25 +170,33 @@ export enum HatchStyle {
 }
 
 export interface ColorFill {
-  kind: FillKind.Color;
   background: Rgb;
   /** 배경 위에 그려지는 해치 무늬. 있을 때만. */
   pattern?: { style: HatchStyle; color: Rgb };
-  /** 0-100. 최신 한글이 적용하는 알파. */
+  /** HWPX winBrush의 alpha를 0-100으로 환산한 값. HWP에는 대응하는 필드가 없다. */
   alpha?: number;
+  /**
+   * HWP 채우기 정보 끝에 켜진 종류마다 붙는 1바이트. 명세에 없고 의미를 모른다.
+   * rhwp는 투명도로 해석하지만, 0·50·128·255로 바꿔도 macOS 한글 표시가 같았다.
+   * 왕복 보존용으로 원시 값만 담는다.
+   */
+  unknown?: number;
 }
 
 export enum GradientKind {
+  /** 줄무늬형 */
   Linear = 1,
+  /** 원형 */
   Radial = 2,
+  /** 원뿔형 */
   Conical = 3,
+  /** 사각형 */
   Square = 4,
 }
 
 export interface GradientFill {
-  kind: FillKind.Gradient;
   type: GradientKind;
-  /** 도 단위, 0-360. */
+  /** 도 단위, 0-359. */
   angle: number;
   /** 중심. 각 축에서 0-100. */
   centerX: number;
@@ -205,53 +206,84 @@ export interface GradientFill {
   colors: Rgb[];
   /** 각 색 정지점의 위치, 0-100. 균등 분포면 생략한다. */
   stops?: number[];
+  /** 번짐 정도의 중심, 0-100. HWP의 추가 채우기 속성에 담긴다. */
+  stepCenter?: number;
+  /** HWPX gradation의 alpha. {@link ColorFill.alpha} 참조. */
   alpha?: number;
+  /** {@link ColorFill.unknown} 참조. */
+  unknown?: number;
 }
 
 export enum ImageFillMode {
+  /** 0 바둑판식으로-모두 */
   Tile = 0,
+  /** 1 바둑판식으로-가로/위 */
   TileHorizontalTop = 1,
+  /** 2 바둑판식으로-가로/아래 */
   TileHorizontalBottom = 2,
+  /** 3 바둑판식으로-세로/왼쪽 */
   TileVerticalLeft = 3,
+  /** 4 바둑판식으로-세로/오른쪽 */
   TileVerticalRight = 4,
+  /** 5 크기에 맞추어 */
   Total = 5,
+  /** 6 가운데로 */
   Center = 6,
+  /** 7 가운데 위로 */
   CenterTop = 7,
+  /** 8 가운데 아래로 */
   CenterBottom = 8,
+  /** 9 왼쪽 가운데로 */
   LeftCenter = 9,
+  /** 10 왼쪽 위로 */
   LeftTop = 10,
+  /** 11 왼쪽 아래로 */
   LeftBottom = 11,
+  /** 12 오른쪽 가운데로 */
   RightCenter = 12,
+  /** 13 오른쪽 위로 */
   RightTop = 13,
+  /** 14 오른쪽 아래로 */
   RightBottom = 14,
+  /** 15 NONE(한컴오피스 한글에서는 "원래크기에 비례하여"라고 표기됨) */
   None = 15,
 }
 
 export enum ImageEffect {
+  /** 효과 없음 */
   RealPicture = 0,
+  /** 회색조 */
   GrayScale = 1,
+  /** 흑백 */
   BlackWhite = 2,
+  /** 미확인 (macos용 한컴오피스 한글 내 드롭다운에서 확인되지 않음) */
   Pattern8x8 = 3,
 }
 
 export interface ImageFill {
-  kind: FillKind.Image;
   mode: ImageFillMode;
   effect?: ImageEffect;
-  /** {@link HwpDocument.binData}의 인덱스. */
+  /** {@link HwpDocument.binData}의 인덱스. 파일의 BinItem ID는 1부터라 1을 뺀 값이다. */
   binDataId: number;
   brightness?: number;
   contrast?: number;
-  alpha?: number;
+  /** {@link ColorFill.unknown} 참조. */
+  unknown?: number;
 }
 
-export interface NoFill {
-  kind: FillKind.None;
+/**
+ * 채우기 정보(표 28). 종류 값이 비트 플래그라 세 채우기가 동시에 켜질 수 있다.
+ */
+export interface Fill {
+  /** bit 0. */
+  color?: ColorFill;
+  /** bit 2. */
+  gradient?: GradientFill;
+  /** bit 1. */
+  image?: ImageFill;
 }
 
-export type Fill = NoFill | ColorFill | GradientFill | ImageFill;
-
-export const NO_FILL: NoFill = { kind: FillKind.None };
+export const NO_FILL: Fill = {};
 
 /**
  * 테두리와 채우기의 쌍. 셀, 문단, 쪽, 도형이 전부 인덱스로 이것을 참조한다.

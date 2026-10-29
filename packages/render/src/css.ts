@@ -10,7 +10,7 @@ import {
   type BorderFill,
   type BorderLine,
   type CharShape,
-  FillKind,
+  type Fill,
   type HwpDocument,
   Lang,
   LineSpacingKind,
@@ -87,24 +87,23 @@ export function borderFillCss(fill: BorderFill | undefined): string[] {
   return out
 }
 
-export function fillCss(fill: BorderFill['fill'] | undefined): string[] {
-  if (!fill) return []
-  switch (fill.kind) {
-    case FillKind.Color:
-      return [`background-color:${toHex(fill.background)}`]
-    case FillKind.Gradient: {
-      const stops = fill.colors.map((color, i) => {
-        const position = fill.stops?.[i]
-        return position === undefined ? toHex(color) : `${toHex(color)} ${num(position)}%`
-      })
-      if (stops.length < 2) return stops.length === 1 ? [`background:${stops[0]}`] : []
-      // HWP는 각도를 수평에서 시계방향으로 재고 CSS는 "to top"에서 시계방향으로
-      // 잰다. 그래서 90도 차이가 난다.
-      return [`background:linear-gradient(${num(fill.angle + 90)}deg, ${stops.join(', ')})`]
-    }
-    default:
-      return []
+export function fillCss(fill: Fill | undefined): string[] {
+  const out: string[] = []
+  if (fill?.color) out.push(`background-color:${toHex(fill.color.background)}`)
+  const gradient = fill?.gradient
+  if (gradient) {
+    const stops = gradient.colors.map((color, i) => {
+      const position = gradient.stops?.[i]
+      return position === undefined ? toHex(color) : `${toHex(color)} ${num(position)}%`
+    })
+    if (stops.length === 1) out.push(`background-color:${stops[0]}`)
+    // HWP는 각도를 수평에서 시계방향으로 재고 CSS는 "to top"에서 시계방향으로
+    // 잰다. 그래서 90도 차이가 난다.
+    else if (stops.length >= 2)
+      out.push(`background-image:linear-gradient(${num(gradient.angle + 90)}deg, ${stops.join(', ')})`)
   }
+  // ponytail: 이미지 채우기는 그리지 않는다. binData를 URL로 넘기는 경로가 생기면 추가.
+  return out
 }
 
 /** 글자 모양의 글꼴 스택. 한글에 친화적인 대체 글꼴 포함. */

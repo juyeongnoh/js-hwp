@@ -17,7 +17,6 @@ import {
   type CharShape,
   type Control,
   type FontFace,
-  FillKind,
   type HwpDocument,
   type InlineItem,
   type Numbering,
@@ -192,7 +191,7 @@ function ensureNonEmpty(doc: HwpDocument): void {
       right: noBorder(),
       top: noBorder(),
       bottom: noBorder(),
-      fill: { kind: FillKind.None },
+      fill: {},
     });
   }
   for (const section of doc.sections) {
@@ -379,7 +378,7 @@ function parseBorderFills(doc: HwpDocument, refList: XmlElement): void {
       right: parseBorderLine(child(element, "hh:rightBorder")),
       top: parseBorderLine(child(element, "hh:topBorder")),
       bottom: parseBorderLine(child(element, "hh:bottomBorder")),
-      fill: { kind: FillKind.None },
+      fill: {},
       threeD: boolAttr(element, "threeD"),
       shadow: boolAttr(element, "shadow"),
       breakCellSeparateLine: boolAttr(element, "breakCellSeparateLine"),
@@ -390,8 +389,7 @@ function parseBorderFills(doc: HwpDocument, refList: XmlElement): void {
     if (win) {
       const background = attr(win, "faceColor");
       if (background && background !== "none") {
-        fill.fill = {
-          kind: FillKind.Color,
+        fill.fill!.color = {
           background: parseColorAttr(background),
           alpha: Math.round(numAttr(win, "alpha") * 100),
         };
@@ -400,8 +398,7 @@ function parseBorderFills(doc: HwpDocument, refList: XmlElement): void {
 
     const gradation = child(brush, "hc:gradation");
     if (gradation) {
-      fill.fill = {
-        kind: FillKind.Gradient,
+      fill.fill!.gradient = {
         type: Math.max(
           1,
           ["", "LINEAR", "RADIAL", "CONICAL", "SQUARE"].indexOf(

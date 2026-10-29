@@ -22,7 +22,7 @@ import {
   type BorderLine,
   type Bullet,
   type CharShape,
-  FillKind,
+  type Fill,
   type FontFace,
   type HwpDocument,
   HeadingKind,
@@ -295,7 +295,7 @@ function readBorderFill(reader: ByteReader): BorderFill {
     color: reader.color(),
   }));
 
-  const fill: BorderFill = {
+  const borderFill: BorderFill = {
     left: lines[0]!,
     right: lines[1]!,
     top: lines[2]!,
@@ -315,51 +315,91 @@ function readBorderFill(reader: ByteReader): BorderFill {
 
   // 대각선: 네 방향과 같은 종류·굵기·색 한 세트. 명세와 다르다.
   if (reader.hasMore(6)) {
-    fill.diagonal = {
+    borderFill.diagonal = {
       style: reader.uint8(),
       width: reader.uint8(),
       color: reader.color(),
     };
   }
 
-  if (reader.hasMore(4)) {
-    const fillKind = reader.uint32();
-    // 비트 0이 단색 채우기, 비트 1이 이미지, 비트 2가 그러데이션을 고른다.
-    if (bit(fillKind, 0) && reader.hasMore(12)) {
-      const background = reader.color();
-      const pattern = reader.color();
-      const patternKind = reader.int32();
-      fill.fill = {
-        kind: FillKind.Color,
-        background,
-        pattern: { style: patternKind, color: pattern },
-      };
-    } else if (bit(fillKind, 2) && reader.hasMore(20)) {
-      const type = reader.uint8();
-      const angle = reader.int32();
-      const centerX = reader.int32();
-      const centerY = reader.int32();
-      const step = reader.int32();
-      const colorCount = reader.int32();
-      const stops =
-        colorCount > 2
-          ? Array.from({ length: colorCount }, () => reader.int32())
-          : undefined;
-      const gradientColors: number[] = [];
+  if (reader.hasMore(4)) borderFill.fill = readFill(reader);
+
+  return borderFill;
+}
+
+/**
+ * 채우기 정보(표 28). 종류의 비트마다 해당 블록이 단색, 그러데이션, 이미지 순으로
+ * 이어지고, 추가 채우기 속성과 켜진 비트마다 의미를 모르는 1바이트가 뒤따른다.
+ */
+function readFill(reader: ByteReader): Fill {
+  const kind = reader.uint32();
+  const fill: Fill = {};
+
+  // 단색 채우기
+  if (bit(kind, 0) && reader.hasMore(12)) {
+    const background = reader.color();
+    const pattern = reader.color();
+    const patternKind = reader.int32();
+    fill.color = {
+      background,
+      pattern: { style: patternKind, color: pattern },
+    };
+  }
+
+  // 그라데이션 채우기
+  // 명세는 여섯 필드를 모두 INT16으로 적지만 유형 1바이트와 나머지 4바이트로 읽는다.
+  // macOS 한글에서 이 배치는 값이 그대로 보였고, INT16 배치는 엉뚱한 값으로 읽혔다.
+  if (bit(kind, 2) && reader.hasMore(21)) {
+    const type = reader.uint8();
+    const angle = reader.int32();
+    const centerX = reader.int32();
+    const centerY = reader.int32();
+    const step = reader.int32();
+    const colorCount = reader.int32();
+    const stops: number[] = [];
+    if (colorCount > 2)
       for (let i = 0; i < colorCount && reader.hasMore(4); i++)
-        gradientColors.push(reader.color());
-      fill.fill = {
-        kind: FillKind.Gradient,
-        type: Math.max(1, type),
-        angle,
-        centerX,
-        centerY,
-        step,
-        colors: gradientColors,
-        stops,
-      };
+        stops.push(reader.int32());
+    const colors: number[] = [];
+    for (let i = 0; i < colorCount && reader.hasMore(4); i++)
+      colors.push(reader.color());
+    fill.gradient = {
+      type: Math.max(1, type),
+      angle,
+      centerX,
+      centerY,
+      step,
+      colors,
+      stops: stops.length > 0 ? stops : undefined,
+    };
+  }
+
+  // 이미지 채우기
+  // 유형(표 31) 뒤에 그림 정보(표 32) 5바이트: 명암, 밝기, 효과, BinItem ID.
+  // 명세는 밝기를 먼저 적지만, 한글에서 밝기 50·명암 75로 저장하면 4B 32 순이다.
+  if (bit(kind, 1) && reader.hasMore(6)) {
+    fill.image = {
+      mode: reader.uint8(),
+      contrast: reader.int8(),
+      brightness: reader.int8(),
+      effect: reader.uint8(),
+      binDataId: reader.uint16() - 1,
+    };
+  }
+
+  // 추가 채우기 속성. 그러데이션이면 크기 1에 번짐 정도의 중심이 담긴다.
+  if (reader.hasMore(4)) {
+    const size = reader.uint32();
+    if (fill.gradient && size >= 1 && reader.hasMore(1)) {
+      fill.gradient.stepCenter = reader.uint8();
+      reader.skip(Math.min(size - 1, reader.remaining));
+    } else {
+      reader.skip(Math.min(size, reader.remaining));
     }
   }
+
+  for (const value of [fill.color, fill.gradient, fill.image])
+    if (value && reader.hasMore(1)) value.unknown = reader.uint8();
 
   return fill;
 }
@@ -768,33 +808,49 @@ function writeBorderFill(fill: BorderFill): ByteWriter {
   writer.uint8(diagonal?.width ?? 0);
   writer.color(diagonal?.color ?? 0);
 
-  const value = fill.fill;
-  if (value.kind === FillKind.Color) {
-    writer.uint32(1);
-    writer.color(value.background);
-    writer.color(value.pattern?.color ?? 0);
-    writer.int32(value.pattern ? value.pattern.style : -1);
-  } else if (value.kind === FillKind.Gradient) {
-    writer.uint32(4);
-    writer.uint8(value.type);
-    writer.int32(value.angle);
-    writer.int32(value.centerX);
-    writer.int32(value.centerY);
-    writer.int32(value.step);
-    writer.int32(value.colors.length);
-    if (value.colors.length > 2) {
-      for (const stop of value.stops ?? value.colors.map((_, i) => i))
-        writer.int32(stop);
-    }
-    for (const color of value.colors) writer.color(color);
-  } else {
-    writer.uint32(0);
-  }
-  // 채우기 종류와 관계없이 추가 채우기 속성의 길이(DWORD)가 먼저 온다.
-  writer.uint32(0);
-  if (value.kind !== FillKind.None) writer.uint8(0); // 채우기가 있을 때의 중심값
+  writeFill(writer, fill.fill ?? {});
 
   return writer;
+}
+
+function writeFill(writer: ByteWriter, fill: Fill): void {
+  const { color, gradient, image } = fill;
+  writer.uint32((color ? 1 : 0) | (image ? 2 : 0) | (gradient ? 4 : 0));
+
+  if (color) {
+    writer.color(color.background);
+    writer.color(color.pattern?.color ?? 0);
+    writer.int32(color.pattern ? color.pattern.style : -1);
+  }
+
+  if (gradient) {
+    writer.uint8(gradient.type);
+    writer.int32(gradient.angle);
+    writer.int32(gradient.centerX);
+    writer.int32(gradient.centerY);
+    writer.int32(gradient.step);
+    writer.int32(gradient.colors.length);
+    if (gradient.colors.length > 2) {
+      for (const stop of gradient.stops ?? gradient.colors.map((_, i) => i))
+        writer.int32(stop);
+    }
+    for (const value of gradient.colors) writer.color(value);
+  }
+
+  if (image) {
+    writer.uint8(image.mode);
+    writer.int8(image.contrast ?? 0);
+    writer.int8(image.brightness ?? 0);
+    writer.uint8(image.effect ?? 0);
+    writer.uint16(image.binDataId + 1);
+  }
+
+  // 추가 채우기 속성: 그러데이션이면 번짐 정도의 중심 1바이트.
+  if (gradient) writer.uint32(1).uint8(gradient.stepCenter ?? 0);
+  else writer.uint32(0);
+
+  for (const value of [color, gradient, image])
+    if (value) writer.uint8(value.unknown ?? 0);
 }
 
 function writeCharShape(shape: CharShape): ByteWriter {
