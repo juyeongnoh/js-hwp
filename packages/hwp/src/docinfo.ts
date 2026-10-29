@@ -22,7 +22,11 @@ import {
   type BorderLine,
   type Bullet,
   type CharShape,
+  type ColorFill,
   type Fill,
+  FillKind,
+  type GradientFill,
+  type ImageFill,
   type FontFace,
   type HwpDocument,
   HeadingKind,
@@ -32,6 +36,7 @@ import {
   type PerLang,
   LineSpacingKind,
   LineStyle,
+  NO_FILL,
   StrikeoutKind,
   type Style,
   StyleKind,
@@ -330,17 +335,22 @@ function readBorderFill(reader: ByteReader): BorderFill {
 /**
  * 채우기 정보(표 28). 종류의 비트마다 해당 블록이 단색, 그러데이션, 이미지 순으로
  * 이어지고, 추가 채우기 속성과 켜진 비트마다 의미를 모르는 1바이트가 뒤따른다.
+ * 바이트 위치를 맞추려고 켜진 블록은 전부 읽지만, 한글처럼 이미지 > 그러데이션 >
+ * 단색 순으로 하나만 남긴다.
  */
 function readFill(reader: ByteReader): Fill {
   const kind = reader.uint32();
-  const fill: Fill = {};
+  let color: ColorFill | undefined;
+  let gradient: GradientFill | undefined;
+  let image: ImageFill | undefined;
 
   // 단색 채우기
   if (bit(kind, 0) && reader.hasMore(12)) {
     const background = reader.color();
     const pattern = reader.color();
     const patternKind = reader.int32();
-    fill.color = {
+    color = {
+      kind: FillKind.Color,
       background,
       pattern: { style: patternKind, color: pattern },
     };
@@ -363,7 +373,8 @@ function readFill(reader: ByteReader): Fill {
     const colors: number[] = [];
     for (let i = 0; i < colorCount && reader.hasMore(4); i++)
       colors.push(reader.color());
-    fill.gradient = {
+    gradient = {
+      kind: FillKind.Gradient,
       type: Math.max(1, type),
       angle,
       centerX,
@@ -378,7 +389,8 @@ function readFill(reader: ByteReader): Fill {
   // 유형(표 31) 뒤에 그림 정보(표 32) 5바이트: 명암, 밝기, 효과, BinItem ID.
   // 명세는 밝기를 먼저 적지만, 한글에서 밝기 50·명암 75로 저장하면 4B 32 순이다.
   if (bit(kind, 1) && reader.hasMore(6)) {
-    fill.image = {
+    image = {
+      kind: FillKind.Image,
       mode: reader.uint8(),
       contrast: reader.int8(),
       brightness: reader.int8(),
@@ -390,18 +402,18 @@ function readFill(reader: ByteReader): Fill {
   // 추가 채우기 속성. 그러데이션이면 크기 1에 번짐 정도의 중심이 담긴다.
   if (reader.hasMore(4)) {
     const size = reader.uint32();
-    if (fill.gradient && size >= 1 && reader.hasMore(1)) {
-      fill.gradient.stepCenter = reader.uint8();
+    if (gradient && size >= 1 && reader.hasMore(1)) {
+      gradient.stepCenter = reader.uint8();
       reader.skip(Math.min(size - 1, reader.remaining));
     } else {
       reader.skip(Math.min(size, reader.remaining));
     }
   }
 
-  for (const value of [fill.color, fill.gradient, fill.image])
+  for (const value of [color, gradient, image])
     if (value && reader.hasMore(1)) value.unknown = reader.uint8();
 
-  return fill;
+  return image ?? gradient ?? color ?? { kind: FillKind.None };
 }
 
 const readPerLang = <T>(read: () => T): PerLang<T> =>
@@ -808,50 +820,52 @@ function writeBorderFill(fill: BorderFill): ByteWriter {
   writer.uint8(diagonal?.width ?? 0);
   writer.color(diagonal?.color ?? 0);
 
-  writeFill(writer, fill.fill ?? {});
+  writeFill(writer, fill.fill ?? NO_FILL);
 
   return writer;
 }
 
 function writeFill(writer: ByteWriter, fill: Fill): void {
-  const { color, gradient, image } = fill;
-  writer.uint32((color ? 1 : 0) | (image ? 2 : 0) | (gradient ? 4 : 0));
+  writer.uint32(FILL_KIND_BITS[fill.kind]);
 
-  if (color) {
-    writer.color(color.background);
-    writer.color(color.pattern?.color ?? 0);
-    writer.int32(color.pattern ? color.pattern.style : -1);
-  }
-
-  if (gradient) {
-    writer.uint8(gradient.type);
-    writer.int32(gradient.angle);
-    writer.int32(gradient.centerX);
-    writer.int32(gradient.centerY);
-    writer.int32(gradient.step);
-    writer.int32(gradient.colors.length);
-    if (gradient.colors.length > 2) {
-      for (const stop of gradient.stops ?? gradient.colors.map((_, i) => i))
+  if (fill.kind === FillKind.Color) {
+    writer.color(fill.background);
+    writer.color(fill.pattern?.color ?? 0);
+    writer.int32(fill.pattern ? fill.pattern.style : -1);
+  } else if (fill.kind === FillKind.Gradient) {
+    writer.uint8(fill.type);
+    writer.int32(fill.angle);
+    writer.int32(fill.centerX);
+    writer.int32(fill.centerY);
+    writer.int32(fill.step);
+    writer.int32(fill.colors.length);
+    if (fill.colors.length > 2) {
+      for (const stop of fill.stops ?? fill.colors.map((_, i) => i))
         writer.int32(stop);
     }
-    for (const value of gradient.colors) writer.color(value);
-  }
-
-  if (image) {
-    writer.uint8(image.mode);
-    writer.int8(image.contrast ?? 0);
-    writer.int8(image.brightness ?? 0);
-    writer.uint8(image.effect ?? 0);
-    writer.uint16(image.binDataId + 1);
+    for (const value of fill.colors) writer.color(value);
+  } else if (fill.kind === FillKind.Image) {
+    writer.uint8(fill.mode);
+    writer.int8(fill.contrast ?? 0);
+    writer.int8(fill.brightness ?? 0);
+    writer.uint8(fill.effect ?? 0);
+    writer.uint16(fill.binDataId + 1);
   }
 
   // 추가 채우기 속성: 그러데이션이면 번짐 정도의 중심 1바이트.
-  if (gradient) writer.uint32(1).uint8(gradient.stepCenter ?? 0);
+  if (fill.kind === FillKind.Gradient) writer.uint32(1).uint8(fill.stepCenter ?? 0);
   else writer.uint32(0);
 
-  for (const value of [color, gradient, image])
-    if (value) writer.uint8(value.unknown ?? 0);
+  if (fill.kind !== FillKind.None) writer.uint8(fill.unknown ?? 0);
 }
+
+/** 채우기 종류 값의 비트. 이미지가 2, 그러데이션이 4다. */
+const FILL_KIND_BITS: Record<FillKind, number> = {
+  [FillKind.None]: 0,
+  [FillKind.Color]: 1,
+  [FillKind.Gradient]: 4,
+  [FillKind.Image]: 2,
+};
 
 function writeCharShape(shape: CharShape): ByteWriter {
   const writer = new ByteWriter();

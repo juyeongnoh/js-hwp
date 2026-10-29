@@ -22,6 +22,7 @@ import {
   type Bullet,
   type CharShape,
   type Control,
+  FillKind,
   type FontFace,
   HeadingKind,
   type HwpDocument,
@@ -322,38 +323,37 @@ function buildBorderFills(borderFills: BorderFill[]): XmlElement {
 }
 
 function buildFillBrush(fill: BorderFill): XmlElement | undefined {
-  const { color, gradient } = fill.fill ?? {}
-  const brushes: XmlElement[] = []
+  const value = fill.fill
+  if (!value || value.kind === FillKind.None) return undefined
 
-  if (color) {
-    brushes.push(
+  if (value.kind === FillKind.Color) {
+    return el('hc:fillBrush', {}, [
       el('hc:winBrush', {
-        faceColor: colorAttr(color.background),
-        hatchColor: colorAttr(color.pattern?.color ?? 0),
-        alpha: (color.alpha ?? 0) / 100,
+        faceColor: colorAttr(value.background),
+        hatchColor: colorAttr(value.pattern?.color ?? 0),
+        alpha: (value.alpha ?? 0) / 100,
       }),
-    )
+    ])
   }
 
-  if (gradient) {
-    brushes.push(
+  if (value.kind === FillKind.Gradient) {
+    return el('hc:fillBrush', {}, [
       el(
         'hc:gradation',
         {
-          type: ['', 'LINEAR', 'RADIAL', 'CONICAL', 'SQUARE'][gradient.type] ?? 'LINEAR',
-          angle: gradient.angle,
-          centerX: gradient.centerX,
-          centerY: gradient.centerY,
-          step: gradient.step,
-          alpha: (gradient.alpha ?? 0) / 100,
+          type: ['', 'LINEAR', 'RADIAL', 'CONICAL', 'SQUARE'][value.type] ?? 'LINEAR',
+          angle: value.angle,
+          centerX: value.centerX,
+          centerY: value.centerY,
+          step: value.step,
+          alpha: (value.alpha ?? 0) / 100,
         },
-        gradient.colors.map((value) => el('hc:color', { value: colorAttr(value) })),
+        value.colors.map((color) => el('hc:color', { value: colorAttr(color) })),
       ),
-    )
+    ])
   }
 
-  // ponytail: imgBrush는 아직 쓰지 않는다. HWPX 이미지 채우기를 파싱할 때 함께 추가.
-  return brushes.length > 0 ? el('hc:fillBrush', {}, brushes) : undefined
+  return undefined
 }
 
 const perLangAttrs = (values: readonly number[]): Record<string, number> =>

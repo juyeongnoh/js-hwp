@@ -155,6 +155,13 @@ export const NO_BORDER: BorderLine = {
   color: 0x000000,
 };
 
+export enum FillKind {
+  None = 0,
+  Color = 1,
+  Gradient = 2,
+  Image = 3,
+}
+
 /**
  * 명세 표 29는 1부터 매기지만 실제 값은 0부터다. 한글 파일의 값을 0~6으로 바꿔
  * 렌더링해 확인했다(6은 무늬 없음). 없음은 -1로 저장된다.
@@ -170,6 +177,7 @@ export enum HatchStyle {
 }
 
 export interface ColorFill {
+  kind: FillKind.Color;
   background: Rgb;
   /** 배경 위에 그려지는 해치 무늬. 있을 때만. */
   pattern?: { style: HatchStyle; color: Rgb };
@@ -195,6 +203,7 @@ export enum GradientKind {
 }
 
 export interface GradientFill {
+  kind: FillKind.Gradient;
   type: GradientKind;
   /** 도 단위, 0-359. */
   angle: number;
@@ -261,6 +270,7 @@ export enum ImageEffect {
 }
 
 export interface ImageFill {
+  kind: FillKind.Image;
   mode: ImageFillMode;
   effect?: ImageEffect;
   /** {@link HwpDocument.binData}의 인덱스. 파일의 BinItem ID는 1부터라 1을 뺀 값이다. */
@@ -271,19 +281,17 @@ export interface ImageFill {
   unknown?: number;
 }
 
-/**
- * 채우기 정보(표 28). 종류 값이 비트 플래그라 세 채우기가 동시에 켜질 수 있다.
- */
-export interface Fill {
-  /** bit 0. */
-  color?: ColorFill;
-  /** bit 2. */
-  gradient?: GradientFill;
-  /** bit 1. */
-  image?: ImageFill;
+export interface NoFill {
+  kind: FillKind.None;
 }
 
-export const NO_FILL: Fill = {};
+/**
+ * 채우기 정보(표 28). 종류 값은 비트 플래그지만 한글은 하나만 저장하고, 여러 비트가
+ * 켜진 파일은 이미지 > 그러데이션 > 단색 순으로 하나만 그린다(macOS 한글 실측).
+ */
+export type Fill = NoFill | ColorFill | GradientFill | ImageFill;
+
+export const NO_FILL: NoFill = { kind: FillKind.None };
 
 /**
  * 테두리와 채우기의 쌍. 셀, 문단, 쪽, 도형이 전부 인덱스로 이것을 참조한다.

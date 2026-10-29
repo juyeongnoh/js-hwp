@@ -9,6 +9,7 @@
 import {
   Align,
   BinDataType,
+  FillKind,
   type BorderFill,
   type CharShape,
   type FontFace,
@@ -198,4 +199,4 @@ export function createDocument(
   return doc;
 }
 
-export { BinDataType as BinDataKind };
+export { BinDataType as BinDataKind, FillKind };
