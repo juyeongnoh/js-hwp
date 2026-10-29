@@ -22,7 +22,6 @@ import {
   type BorderLine,
   type Bullet,
   type CharShape,
-  DiagonalKind,
   FillKind,
   type FontFace,
   type HwpDocument,
@@ -287,22 +286,14 @@ function readFaceName(reader: ByteReader): FontFace {
   return face;
 }
 
-const readBorderLine = (
-  style: number,
-  width: number,
-  color: number,
-): BorderLine => ({
-  style,
-  width,
-  color,
-});
-
 function readBorderFill(reader: ByteReader): BorderFill {
   const properties = reader.uint16();
 
-  const lines = Array.from({ length: 4 }, () =>
-    readBorderLine(reader.uint8(), reader.uint8(), reader.color()),
-  );
+  const lines = Array.from({ length: 4 }, () => ({
+    style: reader.uint8(),
+    width: reader.uint8(),
+    color: reader.color(),
+  }));
 
   const fill: BorderFill = {
     left: lines[0]!,
@@ -322,10 +313,10 @@ function readBorderFill(reader: ByteReader): BorderFill {
     centerLine: bit(properties, 13),
   };
 
-  // 대각선: 종류(표 27), 굵기, 색. 일반 테두리선의 LineStyle과 구분한다.
+  // 대각선: 네 방향과 같은 종류·굵기·색 한 세트. 명세와 다르다.
   if (reader.hasMore(6)) {
     fill.diagonal = {
-      kind: reader.uint8(),
+      style: reader.uint8(),
       width: reader.uint8(),
       color: reader.color(),
     };
@@ -341,8 +332,7 @@ function readBorderFill(reader: ByteReader): BorderFill {
       fill.fill = {
         kind: FillKind.Color,
         background,
-        pattern:
-          patternKind >= 0 ? { style: patternKind, color: pattern } : undefined,
+        pattern: { style: patternKind, color: pattern },
       };
     } else if (bit(fillKind, 2) && reader.hasMore(20)) {
       const type = reader.uint8();
@@ -772,8 +762,9 @@ function writeBorderFill(fill: BorderFill): ByteWriter {
   for (const line of lines)
     writer.uint8(line.style).uint8(line.width).color(line.color);
 
+  // 대각선이 없으면 한글이 빈 문서에 쓰는 기본값(실선, 0.1mm, 검정)을 쓴다.
   const diagonal = fill.diagonal;
-  writer.uint8(diagonal?.kind ?? DiagonalKind.Slash);
+  writer.uint8(diagonal?.style ?? LineStyle.Solid);
   writer.uint8(diagonal?.width ?? 0);
   writer.color(diagonal?.color ?? 0);
 

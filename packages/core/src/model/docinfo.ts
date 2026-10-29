@@ -253,19 +253,6 @@ export type Fill = NoFill | ColorFill | GradientFill | ImageFill;
 
 export const NO_FILL: NoFill = { kind: FillKind.None };
 
-/** 명세 표 27의 대각선 종류. 일반 테두리선 종류인 LineStyle과 구분한다. */
-export enum DiagonalKind {
-  Slash = 0,
-  BackSlash = 1,
-  CrookedSlash = 2,
-}
-
-export interface DiagonalLine {
-  kind: DiagonalKind;
-  width: LineWidth;
-  color: Rgb;
-}
-
 /**
  * 테두리와 채우기의 쌍. 셀, 문단, 쪽, 도형이 전부 인덱스로 이것을 참조한다.
  */
@@ -274,7 +261,12 @@ export interface BorderFill {
   right: BorderLine;
   top: BorderLine;
   bottom: BorderLine;
-  diagonal?: DiagonalLine;
+  /**
+   * 대각선의 선 종류·굵기·색. 명세 표 27은 종류를 Slash/BackSlash/CrookedSlash로
+   * 적지만, 실제 값은 네 방향과 같은 LineStyle이다(빈 문서 1=실선, 점선으로 바꾸면 3).
+   * 방향과 꺾임은 slashShape/backSlashShape 등 속성 비트가 정한다.
+   */
+  diagonal?: BorderLine;
   fill: Fill;
   /** 3D 테두리 효과. */
   threeD?: boolean;
