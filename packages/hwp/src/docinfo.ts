@@ -300,7 +300,7 @@ function readBorderFill(reader: ByteReader): BorderFill {
     right: lines[1]!,
     top: lines[2]!,
     bottom: lines[3]!,
-    fill: { kind: FillKind.None },
+    fill: undefined,
     threeD: bit(properties, 0),
     shadow: bit(properties, 1),
     slashShape: bits(properties, 2, 4),

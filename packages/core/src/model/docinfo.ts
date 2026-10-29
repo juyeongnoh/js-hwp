@@ -267,7 +267,7 @@ export interface BorderFill {
    * 방향과 꺾임은 slashShape/backSlashShape 등 속성 비트가 정한다.
    */
   diagonal?: BorderLine;
-  fill: Fill;
+  fill?: Fill;
   /** 3D 테두리 효과. */
   threeD?: boolean;
   shadow?: boolean;
