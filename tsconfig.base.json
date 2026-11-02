@@ -22,7 +22,6 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@js-hwp/cfb": ["packages/cfb/src/index.ts"],
       "@js-hwp/core": ["packages/core/src/index.ts"],
       "@js-hwp/hwp": ["packages/hwp/src/index.ts"],
       "@js-hwp/hwpx": ["packages/hwpx/src/index.ts"],
