@@ -1,6 +1,6 @@
 {
   "name": "@js-hwp/core",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Document model, builder API and format-agnostic editing operations for HWP documents",
   "license": "MIT",
   "publishConfig": {

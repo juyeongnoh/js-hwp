@@ -1,6 +1,7 @@
 {
   "name": "js-hwp",
   "version": "0.0.1",
+  "private": true,
   "description": "Read, write and edit Hangul (HWP / HWPX) word processor documents in pure TypeScript",
   "license": "MIT",
   "publishConfig": {
@@ -37,8 +38,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@js-hwp/core": "0.0.1",
-    "@js-hwp/hwp": "0.0.1",
+    "@js-hwp/core": "0.0.2",
+    "@js-hwp/hwp": "0.0.2",
     "@js-hwp/hwpx": "0.0.1",
     "@js-hwp/render": "0.0.1"
   },

@@ -1,6 +1,6 @@
 {
   "name": "@js-hwp/hwp",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "HWP 5.x binary format codec \u2014 parse and serialise Hangul .hwp documents",
   "license": "MIT",
   "publishConfig": {
@@ -27,7 +27,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@js-hwp/core": "0.0.1",
+    "@js-hwp/core": "0.0.2",
     "cfb": "^1.2.2",
     "fflate": "^0.8.2"
   },

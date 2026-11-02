@@ -1,6 +1,7 @@
 {
   "name": "@js-hwp/cli",
   "version": "0.0.1",
+  "private": true,
   "description": "Command line tools for HWP documents: inspect, convert, extract text",
   "license": "MIT",
   "publishConfig": {
