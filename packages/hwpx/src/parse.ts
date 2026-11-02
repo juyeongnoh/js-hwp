@@ -35,6 +35,7 @@ import {
   defaultPageDef,
   defaultParaShape,
   perLang,
+  rgb,
 } from "@js-hwp/core";
 import { unzipSync } from "fflate";
 import {
@@ -206,7 +207,7 @@ function ensureNonEmpty(doc: HwpDocument): void {
   }
 }
 
-const noBorder = (): BorderLine => ({ style: 0, width: 0, color: 0 });
+const noBorder = (): BorderLine => ({ style: 0, width: 0, color: rgb(0, 0, 0) });
 
 // ---------------------------------------------------------------------------
 // 패키지 파트
@@ -456,7 +457,7 @@ function parseCharShapes(doc: HwpDocument, refList: XmlElement): void {
       textColor: parseColorAttr(attr(element, "textColor")),
       shadeColor:
         shade === "none" || shade === undefined
-          ? 0xffffff
+          ? rgb(255, 255, 255)
           : parseColorAttr(shade),
       borderFillId: Math.max(0, numAttr(element, "borderFillIDRef", 1) - 1),
       useFontSpace: boolAttr(element, "useFontSpace"),
@@ -502,7 +503,7 @@ function parseCharShapes(doc: HwpDocument, refList: XmlElement): void {
     ) {
       shape.shadow = {
         kind: 1,
-        color: parseColorAttr(attr(shadow, "color"), 0xb2b2b2),
+        color: parseColorAttr(attr(shadow, "color"), rgb(0xb2, 0xb2, 0xb2)),
         offsetX: numAttr(shadow, "offsetX", 10),
         offsetY: numAttr(shadow, "offsetY", 10),
       };

@@ -174,7 +174,7 @@ export function applyTextStyle(base: CharShape, style: TextStyle, resources: Res
 
   if (style.shadow !== undefined) {
     shape.shadow = style.shadow
-      ? { kind: 1, color: 0x808080, offsetX: 10, offsetY: 10 }
+      ? { kind: 1, color: parseColor(0x808080), offsetX: 10, offsetY: 10 }
       : undefined
     if (!style.shadow) delete shape.shadow
   }

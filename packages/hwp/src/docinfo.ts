@@ -43,9 +43,13 @@ import {
   type TabDef,
   UnderlineKind,
   BinDataCompression,
+  type Rgb,
+  rgb,
 } from "@js-hwp/core";
 import { ByteReader, ByteWriter, bit, bits, setBit, setBits } from "./bytes.js";
 import { type HwpRecord, RecordWriter, parseRecords } from "./record.js";
+
+const BLACK = rgb(0, 0, 0);
 import { DocInfoTag } from "./tags.js";
 
 /** 레코드가 개수를 저장하는 순서대로의 ID_MAPPINGS 슬롯. */
@@ -370,7 +374,7 @@ function readFill(reader: ByteReader): Fill {
     if (colorCount > 2)
       for (let i = 0; i < colorCount && reader.hasMore(4); i++)
         stops.push(reader.int32());
-    const colors: number[] = [];
+    const colors: Rgb[] = [];
     for (let i = 0; i < colorCount && reader.hasMore(4); i++)
       colors.push(reader.color());
     gradient = {
@@ -818,7 +822,7 @@ function writeBorderFill(fill: BorderFill): ByteWriter {
   const diagonal = fill.diagonal;
   writer.uint8(diagonal?.style ?? LineStyle.Solid);
   writer.uint8(diagonal?.width ?? 0);
-  writer.color(diagonal?.color ?? 0);
+  writer.color(diagonal?.color ?? BLACK);
 
   writeFill(writer, fill.fill ?? NO_FILL);
 
@@ -830,7 +834,7 @@ function writeFill(writer: ByteWriter, fill: Fill): void {
 
   if (fill.kind === FillKind.Color) {
     writer.color(fill.background);
-    writer.color(fill.pattern?.color ?? 0);
+    writer.color(fill.pattern?.color ?? BLACK);
     writer.int32(fill.pattern ? fill.pattern.style : -1);
   } else if (fill.kind === FillKind.Gradient) {
     writer.uint8(fill.type);
@@ -915,11 +919,11 @@ function writeCharShape(shape: CharShape): ByteWriter {
   writer.int8(shape.shadow?.offsetX ?? 0);
   writer.int8(shape.shadow?.offsetY ?? 0);
   writer.color(shape.textColor);
-  writer.color(shape.underline?.color ?? 0);
+  writer.color(shape.underline?.color ?? BLACK);
   writer.color(shape.shadeColor);
-  writer.color(shape.shadow?.color ?? 0);
+  writer.color(shape.shadow?.color ?? BLACK);
   writer.uint16(shape.borderFillId ?? 0);
-  writer.color(shape.strikeout?.color ?? 0);
+  writer.color(shape.strikeout?.color ?? BLACK);
 
   return writer;
 }

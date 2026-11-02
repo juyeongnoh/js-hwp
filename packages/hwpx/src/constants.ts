@@ -7,6 +7,8 @@
  *
  */
 
+import { type Rgb, parseColor, rgb, toHex } from '@js-hwp/core'
+
 export const NS = {
   hv: 'http://www.hancom.co.kr/hwpml/2011/version',
   ha: 'http://www.hancom.co.kr/hwpml/2011/app',
@@ -201,16 +203,15 @@ export const enumName = (table: readonly string[], index: number, fallback: stri
   table[index] ?? fallback
 
 /** HWPX용 `#rrggbb`, 또는 HWPX가 "색 없음"에 쓰는 리터럴 `none`. */
-export function colorAttr(value: number | undefined): string {
-  if (value === undefined) return 'none'
-  return `#${(value & 0xffffff).toString(16).padStart(6, '0')}`
+export function colorAttr(value: Rgb | undefined): string {
+  return value === undefined ? 'none' : toHex(value)
 }
 
-export function parseColorAttr(value: string | undefined, fallback = 0): number {
+export function parseColorAttr(value: string | undefined, fallback: Rgb = rgb(0, 0, 0)): Rgb {
   if (!value || value === 'none') return fallback
   const hex = value.startsWith('#') ? value.slice(1) : value
   const parsed = parseInt(hex, 16)
-  return Number.isNaN(parsed) ? fallback : parsed & 0xffffff
+  return Number.isNaN(parsed) ? fallback : parseColor(parsed)
 }
 
 /** 선 굵기는 `"0.12 mm"`로 쓰인다. 다시 열거형 인덱스로 대응시킨다. */

@@ -29,6 +29,7 @@ import {
   type TableRow,
   VerticalAlign,
   defaultPageDef,
+  rgb,
 } from '@js-hwp/core'
 import { ByteReader, ByteWriter, bit, bits, setBit, setBits } from './bytes.js'
 import { type RecordNode, RecordWriter, buildRecordTree, childWithTag, parseRecords } from './record.js'
@@ -1058,7 +1059,7 @@ function writeColumnDefinition(writer: RecordWriter, section: Section): void {
     .uint16(properties)
     .uint16(section.columnDef?.gap ?? 0)
     .uint16(0)
-    .uint8(0).uint8(0).color(0))
+    .uint8(0).uint8(0).color(rgb(0, 0, 0)))
 }
 
 function noteShapeBytes(endnote: boolean): ByteWriter {
@@ -1077,7 +1078,7 @@ function noteShapeBytes(endnote: boolean): ByteWriter {
     .hwpUnit16(endnote ? 0 : 283)
     .uint8(1) // separator style
     .uint8(1) // separator width
-    .color(0) // separator color
+    .color(rgb(0, 0, 0)) // separator color
 }
 
 function writeTable(

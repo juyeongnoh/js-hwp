@@ -11,6 +11,8 @@
  *   생기기 전 것이기 때문이다. 그래서 모든 `readOptional*` 헬퍼가 있다.
  */
 
+import { rgb, type Rgb } from "@js-hwp/core";
+
 export class HwpFormatError extends Error {
   override name = "HwpFormatError";
 }
@@ -111,20 +113,14 @@ export class ByteReader {
     return this.int16();
   }
 
-  /**
-   * COLORREF. `0x00BBGGRR`로 저장된다. 모델은 `0xRRGGBB`를 쓰므로 빨강과
-   * 파랑 바이트를 여기서만, 다른 데서는 안 바꾼다.
-   */
-  color(): number {
-    const raw = this.uint32();
-    return (
-      (((raw & 0xff) << 16) | (raw & 0xff00) | ((raw >>> 16) & 0xff)) >>> 0
-    );
-  }
-
-  /** 원시 COLORREF. 왕복을 위해 최상위 바이트를 보존한다. */
-  rawColor(): number {
-    return this.uint32();
+  /** COLORREF. R, G, B, 최상위 바이트 순서로 저장된다. */
+  color(): Rgb {
+    return {
+      r: this.uint8(),
+      g: this.uint8(),
+      b: this.uint8(),
+      unknown: this.uint8(),
+    };
   }
 
   /** UTF-16 코드 단위 개수를 담은 WORD, 그다음 코드 단위 자체. */
@@ -190,7 +186,7 @@ export class ByteReader {
     return this.hasMore(4) ? this.int32() : fallback;
   }
 
-  optionalColor(fallback = 0): number {
+  optionalColor(fallback: Rgb = rgb(0, 0, 0)): Rgb {
     return this.hasMore(4) ? this.color() : fallback;
   }
 
@@ -270,16 +266,9 @@ export class ByteWriter {
     return this.int16(Math.round(value));
   }
 
-  /** `0xRRGGBB`를 HWP의 `0x00BBGGRR`로 내보낸다. */
-  color(value: number): this {
-    const r = (value >>> 16) & 0xff;
-    const g = (value >>> 8) & 0xff;
-    const b = value & 0xff;
-    return this.uint32(((b << 16) | (g << 8) | r) >>> 0);
-  }
-
-  rawColor(value: number): this {
-    return this.uint32(value);
+  /** COLORREF를 R, G, B, 최상위 바이트 순서로 내보낸다. */
+  color(value: Rgb): this {
+    return this.uint8(value.r).uint8(value.g).uint8(value.b).uint8(value.unknown);
   }
 
   /** 코드 단위 개수를 담은 WORD, 그다음 UTF-16LE 데이터. NUL 종결자 없음. */

@@ -10,6 +10,7 @@
 | `fill-gradient-step-zero/`    | 번짐 정도 0이면 그러데이션이 그려지지 않음                      |
 | `fill-trailing-unknown-byte/` | 채우기 끝의 알 수 없는 1바이트가 표시에 영향을 주는지           |
 | `fill-multi-kind-priority/`   | 채우기 종류가 여러 개 켜졌을 때의 우선순위                      |
+| `colorref-high-byte/`         | COLORREF 최상위 바이트의 의미, `FFFFFFFF`가 "색 없음"인지       |
 | `scripts/`                    | 실험 파일 생성·검사 스크립트 (공용)                             |
 
 새 실험을 추가하면 이 표에 한 줄을 넣는다.

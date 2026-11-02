@@ -30,6 +30,7 @@ import {
   DEFAULT_VERSION,
   type HwpDocument,
 } from "./model/document.js";
+import { rgb } from "./model/color.js";
 import { GutterKind, type PageDef, type Section } from "./model/section.js";
 import { PAPER, mm, pt } from "./model/units.js";
 
@@ -52,8 +53,8 @@ export function defaultCharShape(
     relSizes: perLang(100),
     offsets: perLang(0),
     height: pt(10),
-    textColor: 0x000000,
-    shadeColor: 0xffffff,
+    textColor: rgb(0, 0, 0),
+    shadeColor: rgb(255, 255, 255),
     ...overrides,
   };
 }
@@ -88,17 +89,17 @@ export const DEFAULT_BORDER_FILLS: BorderFill[] = [
     fill: NO_FILL,
   },
   {
-    left: { style: LineStyle.Solid, width: LineWidth.W0_12mm, color: 0x000000 },
+    left: { style: LineStyle.Solid, width: LineWidth.W0_12mm, color: rgb(0, 0, 0) },
     right: {
       style: LineStyle.Solid,
       width: LineWidth.W0_12mm,
-      color: 0x000000,
+      color: rgb(0, 0, 0),
     },
-    top: { style: LineStyle.Solid, width: LineWidth.W0_12mm, color: 0x000000 },
+    top: { style: LineStyle.Solid, width: LineWidth.W0_12mm, color: rgb(0, 0, 0) },
     bottom: {
       style: LineStyle.Solid,
       width: LineWidth.W0_12mm,
-      color: 0x000000,
+      color: rgb(0, 0, 0),
     },
     fill: NO_FILL,
   },

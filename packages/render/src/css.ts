@@ -143,7 +143,7 @@ export function charShapeCss(doc: HwpDocument, shape: CharShape): string[] {
   }
 
   // 0xffffff는 HWP의 "음영 없음"이지 명시적 흰 배경이 아니다.
-  if (shape.shadeColor !== 0xffffff && shape.shadeColor !== undefined) {
+  if (shape.shadeColor !== undefined && toHex(shape.shadeColor) !== '#ffffff') {
     out.push(`background-color:${toHex(shape.shadeColor)}`)
   }
 

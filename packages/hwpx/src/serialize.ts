@@ -42,6 +42,8 @@ import {
   UnderlineKind,
   VerticalAlign,
   documentText,
+  rgb,
+  toHex,
 } from '@js-hwp/core'
 import { zipSync } from 'fflate'
 import {
@@ -289,7 +291,7 @@ const borderLine = (name: string, line: BorderLine | undefined): XmlElement =>
   el(name, {
     type: enumName(LINE_TYPE, line?.style ?? LineStyle.None, 'NONE'),
     width: LINE_WIDTH[line?.width ?? 0] ?? '0.1 mm',
-    color: colorAttr(line?.color ?? 0),
+    color: colorAttr(line?.color ?? rgb(0, 0, 0)),
   })
 
 function buildBorderFills(borderFills: BorderFill[]): XmlElement {
@@ -314,7 +316,7 @@ function buildBorderFills(borderFills: BorderFill[]): XmlElement {
           borderLine('hh:rightBorder', fill.right),
           borderLine('hh:topBorder', fill.top),
           borderLine('hh:bottomBorder', fill.bottom),
-          el('hh:diagonal', { type: 'SOLID', width: '0.1 mm', color: colorAttr(0) }),
+          el('hh:diagonal', { type: 'SOLID', width: '0.1 mm', color: '#000000' }),
           buildFillBrush(fill),
         ],
       ),
@@ -330,7 +332,7 @@ function buildFillBrush(fill: BorderFill): XmlElement | undefined {
     return el('hc:fillBrush', {}, [
       el('hc:winBrush', {
         faceColor: colorAttr(value.background),
-        hatchColor: colorAttr(value.pattern?.color ?? 0),
+        hatchColor: colorAttr(value.pattern?.color ?? rgb(0, 0, 0)),
         alpha: (value.alpha ?? 0) / 100,
       }),
     ])
@@ -374,7 +376,7 @@ function buildCharPr(shape: CharShape, id: number): XmlElement {
       id,
       height: shape.height,
       textColor: colorAttr(shape.textColor),
-      shadeColor: shape.shadeColor === 0xffffff ? 'none' : colorAttr(shape.shadeColor),
+      shadeColor: toHex(shape.shadeColor) === '#ffffff' ? 'none' : toHex(shape.shadeColor),
       useFontSpace: shape.useFontSpace ?? false,
       useKerning: shape.useKerning ?? false,
       symMark: enumName(
@@ -395,19 +397,19 @@ function buildCharPr(shape: CharShape, id: number): XmlElement {
       el('hh:underline', {
         type: enumName(UNDERLINE_TYPE, shape.underline?.kind ?? UnderlineKind.None, 'NONE'),
         shape: enumName(LINE_TYPE, shape.underline?.style ?? LineStyle.Solid, 'SOLID'),
-        color: colorAttr(shape.underline?.color ?? 0),
+        color: colorAttr(shape.underline?.color ?? rgb(0, 0, 0)),
       }),
       el('hh:strikeout', {
         shape:
           shape.strikeout && shape.strikeout.kind !== StrikeoutKind.None
             ? enumName(LINE_TYPE, shape.strikeout.style, 'SOLID')
             : 'NONE',
-        color: colorAttr(shape.strikeout?.color ?? 0),
+        color: colorAttr(shape.strikeout?.color ?? rgb(0, 0, 0)),
       }),
       el('hh:outline', { type: enumName(LINE_TYPE, shape.outline ?? 0, 'NONE') }),
       el('hh:shadow', {
         type: shape.shadow ? 'DROP' : 'NONE',
-        color: colorAttr(shape.shadow?.color ?? 0xb2b2b2),
+        color: colorAttr(shape.shadow?.color ?? rgb(0xb2, 0xb2, 0xb2)),
         offsetX: shape.shadow?.offsetX ?? 10,
         offsetY: shape.shadow?.offsetY ?? 10,
       }),
@@ -708,7 +710,7 @@ function buildNoteProperties(name: string, place: string): XmlElement {
       suffixChar: ')',
       supscript: 0,
     }),
-    el('hp:noteLine', { length: -1, type: 'SOLID', width: '0.12 mm', color: colorAttr(0) }),
+    el('hp:noteLine', { length: -1, type: 'SOLID', width: '0.12 mm', color: '#000000' }),
     el('hp:noteSpacing', { betweenNotes: 283, belowLine: 567, aboveLine: 850 }),
     el('hp:numbering', { type: 'CONTINUOUS', newNum: 1 }),
     el('hp:placement', { place, beneathText: 0 }),
@@ -805,7 +807,7 @@ function buildControl(doc: HwpDocument, control: Control): XmlNode | undefined {
     case 'equation':
       return el(
         'hp:equation',
-        { id: '', version: 'Equation Version 60', baseLine: control.baseLine ?? 85, textColor: colorAttr(control.color ?? 0), baseUnit: control.charSize ?? 1000, lineMode: 'CHAR' },
+        { id: '', version: 'Equation Version 60', baseLine: control.baseLine ?? 85, textColor: colorAttr(control.color ?? rgb(0, 0, 0)), baseUnit: control.charSize ?? 1000, lineMode: 'CHAR' },
         [el('hp:script', {}, [control.script])],
       )
     case 'autoNumber':

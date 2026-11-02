@@ -7,7 +7,7 @@
  * `Contents/header.xml` 안의 `<hh:charPr>`, `<hh:paraPr>` 등으로 나타난다.
  */
 
-import type { Rgb } from "./color.js";
+import { rgb, type Rgb } from "./color.js";
 import type { HwpUnit, SHwpUnit } from "./units.js";
 
 /**
@@ -152,7 +152,7 @@ export interface BorderLine {
 export const NO_BORDER: BorderLine = {
   style: LineStyle.None,
   width: LineWidth.W0_1mm,
-  color: 0x000000,
+  color: rgb(0, 0, 0),
 };
 
 export enum FillKind {
