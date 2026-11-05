@@ -562,9 +562,9 @@ export interface TabStop {
 }
 
 export interface TabDef {
-  /** 문단의 왼쪽 들여쓰기 위치에 자동 탭 정지. */
+  /** bit 0: 문단 왼쪽 끝 자동 탭(내어쓰기용 자동 탭) 유무 */
   autoTabLeft?: boolean;
-  /** 문단의 오른쪽 들여쓰기 위치에 자동 탭 정지. */
+  /** bit 1: 문단 오른쪽 끝 자동 탭 유무 */
   autoTabRight?: boolean;
   stops: TabStop[];
 }
