@@ -26,7 +26,6 @@ import {
   type Run,
   type Section,
   type Style,
-  StrikeoutKind,
   type TabDef,
   type TableCell,
   type TableRow,
@@ -36,6 +35,7 @@ import {
   defaultParaShape,
   perLang,
   rgb,
+  ShadowKind,
 } from "@js-hwp/core";
 import { unzipSync } from "fflate";
 import {
@@ -49,6 +49,7 @@ import {
   PAGE_DIRECTION,
   TABLE_PAGE_BREAK,
   CELL_VERTICAL_ALIGN_FROM_WIRE,
+  SYM_MARK,
   UNDERLINE_TYPE,
   VERTICAL_ALIGN,
   enumIndex,
@@ -446,6 +447,8 @@ function parseCharShapes(doc: HwpDocument, refList: XmlElement): void {
     const strikeout = child(element, "hh:strikeout");
     const shadow = child(element, "hh:shadow");
     const shade = attr(element, "shadeColor");
+    const strikeShape = attr(strikeout, "shape");
+    const shadowType = attr(shadow, "type");
 
     const shape: CharShape = {
       fontIds: perLangFrom(child(element, "hh:fontRef"), 0),
@@ -460,6 +463,27 @@ function parseCharShapes(doc: HwpDocument, refList: XmlElement): void {
           ? rgb(255, 255, 255)
           : parseColorAttr(shade),
       borderFillId: Math.max(0, numAttr(element, "borderFillIDRef", 1) - 1),
+      outline: enumIndex(LINE_TYPE, attr(child(element, "hh:outline"), "type")),
+      emphasis: enumIndex(SYM_MARK, attr(element, "symMark")),
+      underline: {
+        kind: enumIndex(UNDERLINE_TYPE, attr(underline, "type")),
+        style: enumIndex(LINE_TYPE, attr(underline, "shape"), 1),
+        color: parseColorAttr(attr(underline, "color")),
+      },
+      strikeout: {
+        enabled: !!strikeShape && strikeShape !== "NONE",
+        style: enumIndex(LINE_TYPE, strikeShape, 1),
+        color: parseColorAttr(attr(strikeout, "color")),
+      },
+      shadow: {
+        kind:
+          shadow && shadowType !== "NONE" && shadowType !== undefined
+            ? ShadowKind.Drop
+            : ShadowKind.None,
+        color: parseColorAttr(attr(shadow, "color"), rgb(0xb2, 0xb2, 0xb2)),
+        offsetX: numAttr(shadow, "offsetX", 10),
+        offsetY: numAttr(shadow, "offsetY", 10),
+      },
       useFontSpace: boolAttr(element, "useFontSpace"),
       useKerning: boolAttr(element, "useKerning"),
     };
@@ -472,42 +496,6 @@ function parseCharShapes(doc: HwpDocument, refList: XmlElement): void {
     if (child(element, "hh:supscript")) shape.superscript = true;
     if (child(element, "hh:subscript")) shape.subscript = true;
 
-    const underlineType = enumIndex(UNDERLINE_TYPE, attr(underline, "type"));
-    if (underlineType !== 0) {
-      shape.underline = {
-        kind: underlineType,
-        style: enumIndex(LINE_TYPE, attr(underline, "shape"), 1),
-        color: parseColorAttr(attr(underline, "color")),
-      };
-    }
-
-    const strikeShape = attr(strikeout, "shape");
-    if (strikeShape && strikeShape !== "NONE") {
-      shape.strikeout = {
-        kind: StrikeoutKind.Continuous,
-        style: enumIndex(LINE_TYPE, strikeShape, 1),
-        color: parseColorAttr(attr(strikeout, "color")),
-      };
-    }
-
-    const outlineType = enumIndex(
-      LINE_TYPE,
-      attr(child(element, "hh:outline"), "type"),
-    );
-    if (outlineType !== 0) shape.outline = outlineType;
-
-    if (
-      shadow &&
-      attr(shadow, "type") !== "NONE" &&
-      attr(shadow, "type") !== undefined
-    ) {
-      shape.shadow = {
-        kind: 1,
-        color: parseColorAttr(attr(shadow, "color"), rgb(0xb2, 0xb2, 0xb2)),
-        offsetX: numAttr(shadow, "offsetX", 10),
-        offsetY: numAttr(shadow, "offsetY", 10),
-      };
-    }
 
     return shape;
   });

@@ -35,7 +35,6 @@ import {
   type Paragraph,
   type Section,
   type Style,
-  StrikeoutKind,
   type TabDef,
   type TableCell,
   PageBreakInTable,
@@ -43,6 +42,7 @@ import {
   VerticalAlign,
   documentText,
   rgb,
+  ShadowKind,
   toHex,
 } from '@js-hwp/core'
 import { zipSync } from 'fflate'
@@ -67,6 +67,7 @@ import {
   VERTICAL_ALIGN,
   binDataEntry,
   colorAttr,
+  SYM_MARK,
   enumName,
   sectionEntry,
 } from './constants.js'
@@ -379,11 +380,7 @@ function buildCharPr(shape: CharShape, id: number): XmlElement {
       shadeColor: toHex(shape.shadeColor) === '#ffffff' ? 'none' : toHex(shape.shadeColor),
       useFontSpace: shape.useFontSpace ?? false,
       useKerning: shape.useKerning ?? false,
-      symMark: enumName(
-        ['NONE', 'DOT_ABOVE', 'RING_ABOVE', 'TILDE', 'CARON', 'SIDE', 'COLON'],
-        shape.emphasis ?? 0,
-        'NONE',
-      ),
+      symMark: enumName(SYM_MARK, shape.emphasis, 'NONE'),
       borderFillIDRef: (shape.borderFillId ?? 0) + 1,
     },
     [
@@ -395,23 +392,23 @@ function buildCharPr(shape: CharShape, id: number): XmlElement {
       shape.bold ? el('hh:bold') : undefined,
       shape.italic ? el('hh:italic') : undefined,
       el('hh:underline', {
-        type: enumName(UNDERLINE_TYPE, shape.underline?.kind ?? UnderlineKind.None, 'NONE'),
-        shape: enumName(LINE_TYPE, shape.underline?.style ?? LineStyle.Solid, 'SOLID'),
-        color: colorAttr(shape.underline?.color ?? rgb(0, 0, 0)),
+        type: enumName(UNDERLINE_TYPE, shape.underline.kind, 'NONE'),
+        shape:
+          shape.underline.kind === UnderlineKind.None
+            ? 'SOLID'
+            : enumName(LINE_TYPE, shape.underline.style, 'SOLID'),
+        color: colorAttr(shape.underline.color),
       }),
       el('hh:strikeout', {
-        shape:
-          shape.strikeout && shape.strikeout.kind !== StrikeoutKind.None
-            ? enumName(LINE_TYPE, shape.strikeout.style, 'SOLID')
-            : 'NONE',
-        color: colorAttr(shape.strikeout?.color ?? rgb(0, 0, 0)),
+        shape: shape.strikeout.enabled ? enumName(LINE_TYPE, shape.strikeout.style, 'SOLID') : 'NONE',
+        color: colorAttr(shape.strikeout.color),
       }),
-      el('hh:outline', { type: enumName(LINE_TYPE, shape.outline ?? 0, 'NONE') }),
+      el('hh:outline', { type: enumName(LINE_TYPE, shape.outline, 'NONE') }),
       el('hh:shadow', {
-        type: shape.shadow ? 'DROP' : 'NONE',
-        color: colorAttr(shape.shadow?.color ?? rgb(0xb2, 0xb2, 0xb2)),
-        offsetX: shape.shadow?.offsetX ?? 10,
-        offsetY: shape.shadow?.offsetY ?? 10,
+        type: shape.shadow.kind !== ShadowKind.None ? 'DROP' : 'NONE',
+        color: colorAttr(shape.shadow.color),
+        offsetX: shape.shadow.offsetX,
+        offsetY: shape.shadow.offsetY,
       }),
       shape.emboss ? el('hh:emboss') : undefined,
       shape.engrave ? el('hh:engrave') : undefined,

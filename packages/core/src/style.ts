@@ -17,7 +17,7 @@ import {
   LineStyle,
   type ParaShape,
   type PerLang,
-  StrikeoutKind,
+  ShadowKind,
   UnderlineKind,
   VerticalAlign,
 } from './model/docinfo.js'
@@ -148,7 +148,7 @@ export function applyTextStyle(base: CharShape, style: TextStyle, resources: Res
 
   if (style.underline !== undefined) {
     if (style.underline === false) {
-      delete shape.underline
+      shape.underline = { ...shape.underline, kind: UnderlineKind.None }
     } else {
       const spec = style.underline === true ? {} : style.underline
       shape.underline = {
@@ -161,11 +161,11 @@ export function applyTextStyle(base: CharShape, style: TextStyle, resources: Res
 
   if (style.strikeout !== undefined) {
     if (style.strikeout === false) {
-      delete shape.strikeout
+      shape.strikeout = { ...shape.strikeout, enabled: false }
     } else {
       const spec = style.strikeout === true ? {} : style.strikeout
       shape.strikeout = {
-        kind: StrikeoutKind.Continuous,
+        enabled: true,
         style: LineStyle.Solid,
         color: spec.color !== undefined ? parseColor(spec.color) : shape.textColor,
       }
@@ -174,9 +174,8 @@ export function applyTextStyle(base: CharShape, style: TextStyle, resources: Res
 
   if (style.shadow !== undefined) {
     shape.shadow = style.shadow
-      ? { kind: 1, color: parseColor(0x808080), offsetX: 10, offsetY: 10 }
-      : undefined
-    if (!style.shadow) delete shape.shadow
+      ? { kind: ShadowKind.Drop, color: parseColor(0x808080), offsetX: 10, offsetY: 10 }
+      : { ...shape.shadow, kind: ShadowKind.None }
   }
 
   if (style.color !== undefined) shape.textColor = parseColor(style.color)

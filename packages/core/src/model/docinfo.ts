@@ -361,11 +361,6 @@ export enum UnderlineKind {
   Top = 3,
 }
 
-export enum StrikeoutKind {
-  None = 0,
-  Continuous = 1,
-}
-
 export enum OutlineKind {
   None = 0,
   Solid = 1,
@@ -384,16 +379,20 @@ export enum ShadowKind {
 
 export enum EmphasisMark {
   None = 0,
-  Dot = 1,
-  Ring = 2,
-  Tilde = 3,
-  Caron = 4,
+  DotAbove = 1,
+  RingAbove = 2,
+  /** 모양은 ˇ. HWPX 이름은 `TILDE`다. */
+  Caron = 3,
+  /** 모양은 ˜. HWPX 이름은 `CARON`이다. */
+  Tilde = 4,
   Side = 5,
   Colon = 6,
-  DoubleDot = 7,
-  Hollow = 8,
-  BlackHeart = 9,
-  Circle = 10,
+  GraveAccent = 7,
+  AcuteAccent = 8,
+  Circumflex = 9,
+  Macron = 10,
+  HookAbove = 11,
+  DotBelow = 12,
 }
 
 /**
@@ -412,20 +411,23 @@ export interface CharShape {
   /** 기준선 오프셋, 퍼센트 (-100..100). */
   offsets: PerLang<number>;
 
-  /** HWPUNIT 기준 크기. 11pt 글꼴이면 `pt(11)`을 쓴다. */
+  /** HWPUNIT 기준 크기. 11pt 글꼴이면 `pt(11)`을 쓴다. 파싱 결과는 pt * 1000 */
   height: HwpUnit;
 
   bold?: boolean;
   italic?: boolean;
-  underline?: { kind: UnderlineKind; style: LineStyle; color: Rgb };
-  strikeout?: { kind: StrikeoutKind; style: LineStyle; color: Rgb };
-  outline?: OutlineKind;
-  shadow?: { kind: ShadowKind; color: Rgb; offsetX: number; offsetY: number };
+  /** `kind`가 `None`이어도 파일의 선 모양과 색을 담는다. */
+  underline: { kind: UnderlineKind; style: LineStyle; color: Rgb };
+  /** 꺼져 있어도 파일의 선 모양과 색을 담는다. */
+  strikeout: { enabled: boolean; style: LineStyle; color: Rgb };
+  outline: OutlineKind;
+  /** `kind`가 `None`이어도 파일의 색과 간격을 담는다. */
+  shadow: { kind: ShadowKind; color: Rgb; offsetX: number; offsetY: number };
   emboss?: boolean;
   engrave?: boolean;
   superscript?: boolean;
   subscript?: boolean;
-  emphasis?: EmphasisMark;
+  emphasis: EmphasisMark;
   /** 한글과 라틴 문자 사이의 공백 압축을 적용한다. */
   useFontSpace?: boolean;
   useKerning?: boolean;

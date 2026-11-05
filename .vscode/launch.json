@@ -25,6 +25,29 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "scratch/debug.ts",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_modules/vite-node/vite-node.mjs",
+      "args": [
+        "--config",
+        "vitest.config.ts",
+        "scratch/debug.ts",
+        "${input:hwpFile}"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "hwpFile",
+      "type": "promptString",
+      "description": "HWP 파일 경로 (저장소 루트 기준)",
+      "default": "scratch/test.hwp"
     }
   ]
 }

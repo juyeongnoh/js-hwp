@@ -20,6 +20,7 @@ import {
   Align,
   toHex,
   toPt,
+  ShadowKind,
   UnderlineKind,
   VerticalAlign,
 } from '@js-hwp/core'
@@ -129,14 +130,15 @@ export function charShapeCss(doc: HwpDocument, shape: CharShape): string[] {
   if (shape.italic) out.push('font-style:italic')
 
   const decorations: string[] = []
-  if (shape.underline && shape.underline.kind !== UnderlineKind.None) {
+  const hasUnderline = shape.underline.kind !== UnderlineKind.None
+  if (hasUnderline) {
     decorations.push(shape.underline.kind === UnderlineKind.Top ? 'overline' : 'underline')
   }
-  if (shape.strikeout && shape.strikeout.kind !== 0) decorations.push('line-through')
+  if (shape.strikeout.enabled) decorations.push('line-through')
   if (decorations.length > 0) {
     out.push(`text-decoration-line:${decorations.join(' ')}`)
-    const line = shape.underline
-    if (line) {
+    if (hasUnderline) {
+      const line = shape.underline
       out.push(`text-decoration-style:${LINE_STYLE_CSS[line.style] === 'double' ? 'double' : LINE_STYLE_CSS[line.style] ?? 'solid'}`)
       out.push(`text-decoration-color:${toHex(line.color)}`)
     }
@@ -161,7 +163,7 @@ export function charShapeCss(doc: HwpDocument, shape: CharShape): string[] {
   if (shape.outline) {
     out.push(`-webkit-text-stroke:0.3pt ${toHex(shape.textColor)}`, 'color:transparent')
   }
-  if (shape.shadow) {
+  if (shape.shadow.kind !== ShadowKind.None) {
     const { color, offsetX, offsetY } = shape.shadow
     out.push(`text-shadow:${num(offsetX / 10)}pt ${num(offsetY / 10)}pt 0 ${toHex(color)}`)
   }

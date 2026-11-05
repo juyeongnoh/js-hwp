@@ -135,6 +135,26 @@ export const LINE_WIDTH = [
 export const UNDERLINE_TYPE = ['NONE', 'BOTTOM', 'CENTER', 'TOP'] as const
 
 /**
+ * 모델의 `EmphasisMark`로 인덱싱한 강조점. 3과 4는 표준의 이름이 실제 모양과
+ * 뒤바뀌어 있지만(`TILDE`가 ˇ) 파일에 쓰는 문자열이므로 그대로 둔다.
+ */
+export const SYM_MARK = [
+  'NONE',
+  'DOT_ABOVE',
+  'RING_ABOVE',
+  'TILDE',
+  'CARON',
+  'SIDE',
+  'COLON',
+  'GRAVE_ACCENT',
+  'ACUTE_ACCENT',
+  'CIRCUMFLEX',
+  'MACRON',
+  'HOOK_ABOVE',
+  'DOT_BELOW',
+] as const
+
+/**
  * 모델의 `PageBreakInTable`로 인덱싱한 표 쪽 나눔 동작.
  *
  * HWPX와 바이너리 포맷이 이걸 반대 순서로 놓는다. HWPX는

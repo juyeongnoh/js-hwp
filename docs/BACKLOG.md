@@ -6,6 +6,8 @@
 
 - [x] **COLORREF 최상위 바이트 손실** (2026-11-02): 배경색 `FF FF FF FF`를 다시 쓰면 `FF FF FF 00`이 된다. `reader.color()`가 최상위 바이트를 버린다. `0xFFFFFFFF`가 "색 없음"을 뜻하는지도 함께 확인. `border-fill.test.ts`에 `it.fails`로 표시해 둠. → 읽기·쓰기 모두 네 바이트 보존. 셀 배경에서 `FF FF FF FF`는 색 없음, `FF FF FF 00`은 흰색으로 확인. 최상위 바이트의 의미는 미확인(`experiments/colorref-high-byte`).
 - [ ] **`ImageFillMode.None` 이름**: 한글 표기는 "원래 크기에 비례하여". 동작을 드러내는 이름으로 바꿀지 결정.
+- [ ] **`borderFillId` 1 어긋남**: 파일은 1부터 세고 모델은 0부터 센다. 글자 모양·문단 모양은 읽기·쓰기 모두 값을 그대로 둬서 모델 값이 1 크다. 표는 그대로 읽고 `+ 1`로 써서 저장할 때마다 1씩 커진다(`base-orange.hwp`에서 3 → 4 → 5 재현). 파일의 0은 `undefined`로 구분할지 함께 결정.
+
 
 ## 한글 실측
 

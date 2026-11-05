@@ -1,12 +1,8 @@
 /**
  * `DocInfo` 스트림: 문서의 공유 자원 표.
  *
- * 배치는 `docs/spec/03-docinfo-records.md`를 따른다. 그 참조 문서의 함정 둘을
+ * 배치는 `docs/spec/03-docinfo-records.md`를 따른다. 그 참조 문서의 함정을
  * 다른 데가 아니라 여기서 처리한다.
- *
- * - **취소선은 글자 모양 속성 워드의 비트 18-20에서 읽을 수 없다.** 한글은
- *   취소선이 아예 없는 글자에 대해서도 거기에 0이 아닌 값을 쓴다. 실제
- *   판별자는 비트 26-29의 *모양* 필드다.
  *
  * - **글꼴 표는 문자 체계별이다.** `DocInfo`는 개수가 `ID_MAPPINGS`에서 오는
  *   `FACE_NAME` 묶음 일곱 개를 따로 담는다. 모델에는 평평한 표 하나뿐이라,
@@ -37,11 +33,9 @@ import {
   LineSpacingKind,
   LineStyle,
   NO_FILL,
-  StrikeoutKind,
   type Style,
   StyleKind,
   type TabDef,
-  UnderlineKind,
   BinDataCompression,
   type Rgb,
   rgb,
@@ -451,6 +445,27 @@ function readCharShape(reader: ByteReader): CharShape {
     textColor,
     shadeColor,
     borderFillId,
+    outline: bits(properties, 8, 10),
+    emphasis: bits(properties, 21, 24),
+    underline: {
+      kind: bits(properties, 2, 3),
+      style: bits(properties, 4, 7),
+      color: underlineColor,
+    },
+    // 비트 18-20은 취소선 여부다. 3비트라 1 이외의 값도 켜진 것으로 읽지만 다시 쓸
+    // 때는 1이 된다(샘플에는 0과 1만 있다). 비트 26-29는 선 모양이고, 한글이 그리는
+    // 뜻이 LineStyle과 달라(0이 실선) 원시 값으로 보존한다.
+    strikeout: {
+      enabled: bits(properties, 18, 20) !== 0,
+      style: bits(properties, 26, 29),
+      color: strikeoutColor,
+    },
+    shadow: {
+      kind: bits(properties, 11, 12),
+      color: shadowColor,
+      offsetX: shadowGapX,
+      offsetY: shadowGapY,
+    },
   };
 
   if (bit(properties, 0)) shape.italic = true;
@@ -461,42 +476,6 @@ function readCharShape(reader: ByteReader): CharShape {
   if (bit(properties, 16)) shape.subscript = true;
   if (bit(properties, 25)) shape.useFontSpace = true;
   if (bit(properties, 30)) shape.useKerning = true;
-
-  const underlineType = bits(properties, 2, 3);
-  if (underlineType !== UnderlineKind.None) {
-    shape.underline = {
-      kind: underlineType,
-      style: bits(properties, 4, 7),
-      color: underlineColor,
-    };
-  }
-
-  const outline = bits(properties, 8, 10);
-  if (outline !== 0) shape.outline = outline;
-
-  const shadowType = bits(properties, 11, 12);
-  if (shadowType !== 0) {
-    shape.shadow = {
-      kind: shadowType,
-      color: shadowColor,
-      offsetX: shadowGapX,
-      offsetY: shadowGapY,
-    };
-  }
-
-  // 한글은 취소선이 없는 글자의 비트 18-20에 쓰레기값을 남긴다. 실제로 취소선을
-  // 그릴지 정하는 건 모양 필드다.
-  const strikeoutShape = bits(properties, 26, 29);
-  if (strikeoutShape !== LineStyle.None) {
-    shape.strikeout = {
-      kind: StrikeoutKind.Continuous,
-      style: strikeoutShape,
-      color: strikeoutColor,
-    };
-  }
-
-  const emphasis = bits(properties, 21, 24);
-  if (emphasis !== 0) shape.emphasis = emphasis;
 
   return shape;
 }
@@ -857,7 +836,8 @@ function writeFill(writer: ByteWriter, fill: Fill): void {
   }
 
   // 추가 채우기 속성: 그러데이션이면 번짐 정도의 중심 1바이트.
-  if (fill.kind === FillKind.Gradient) writer.uint32(1).uint8(fill.stepCenter ?? 0);
+  if (fill.kind === FillKind.Gradient)
+    writer.uint32(1).uint8(fill.stepCenter ?? 0);
   else writer.uint32(0);
 
   if (fill.kind !== FillKind.None) writer.uint8(fill.unknown ?? 0);
@@ -885,45 +865,29 @@ function writeCharShape(shape: CharShape): ByteWriter {
   let properties = 0;
   properties = setBit(properties, 0, shape.italic);
   properties = setBit(properties, 1, shape.bold);
-  properties = setBits(
-    properties,
-    2,
-    3,
-    shape.underline?.kind ?? UnderlineKind.None,
-  );
-  properties = setBits(
-    properties,
-    4,
-    7,
-    shape.underline?.style ?? LineStyle.Solid,
-  );
-  properties = setBits(properties, 8, 10, shape.outline ?? 0);
-  properties = setBits(properties, 11, 12, shape.shadow?.kind ?? 0);
+  properties = setBits(properties, 2, 3, shape.underline.kind);
+  properties = setBits(properties, 4, 7, shape.underline.style);
+  properties = setBits(properties, 8, 10, shape.outline);
+  properties = setBits(properties, 11, 12, shape.shadow.kind);
   properties = setBit(properties, 13, shape.emboss);
   properties = setBit(properties, 14, shape.engrave);
   properties = setBit(properties, 15, shape.superscript);
   properties = setBit(properties, 16, shape.subscript);
-  properties = setBits(properties, 21, 24, shape.emphasis ?? 0);
+  properties = setBits(properties, 18, 20, shape.strikeout.enabled ? 1 : 0);
+  properties = setBits(properties, 21, 24, shape.emphasis);
   properties = setBit(properties, 25, shape.useFontSpace);
-  properties = setBits(
-    properties,
-    26,
-    29,
-    shape.strikeout && shape.strikeout.kind !== StrikeoutKind.None
-      ? shape.strikeout.style
-      : LineStyle.None,
-  );
+  properties = setBits(properties, 26, 29, shape.strikeout.style);
   properties = setBit(properties, 30, shape.useKerning);
   writer.uint32(properties);
 
-  writer.int8(shape.shadow?.offsetX ?? 0);
-  writer.int8(shape.shadow?.offsetY ?? 0);
+  writer.int8(shape.shadow.offsetX);
+  writer.int8(shape.shadow.offsetY);
   writer.color(shape.textColor);
-  writer.color(shape.underline?.color ?? BLACK);
+  writer.color(shape.underline.color);
   writer.color(shape.shadeColor);
-  writer.color(shape.shadow?.color ?? BLACK);
+  writer.color(shape.shadow.color);
   writer.uint16(shape.borderFillId ?? 0);
-  writer.color(shape.strikeout?.color ?? BLACK);
+  writer.color(shape.strikeout.color);
 
   return writer;
 }

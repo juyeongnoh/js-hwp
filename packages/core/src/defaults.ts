@@ -16,6 +16,10 @@ import {
   FontFamilyKind,
   LineSpacingKind,
   LineStyle,
+  OutlineKind,
+  EmphasisMark,
+  ShadowKind,
+  UnderlineKind,
   LineWidth,
   NO_BORDER,
   NO_FILL,
@@ -55,6 +59,12 @@ export function defaultCharShape(
     height: pt(10),
     textColor: rgb(0, 0, 0),
     shadeColor: rgb(255, 255, 255),
+    outline: OutlineKind.None,
+    emphasis: EmphasisMark.None,
+    // 꺼진 값도 한글이 빈 문서에 쓰는 값을 따른다.
+    underline: { kind: UnderlineKind.None, style: 0, color: rgb(0, 0, 0) },
+    strikeout: { enabled: false, style: 0, color: rgb(0, 0, 0) },
+    shadow: { kind: ShadowKind.None, color: rgb(0xc0, 0xc0, 0xc0), offsetX: 10, offsetY: 10 },
     ...overrides,
   };
 }

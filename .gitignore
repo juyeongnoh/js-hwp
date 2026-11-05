@@ -63,3 +63,9 @@ tools/
 # CI와 릴리스 자동화. 위의 것들이 없으면 어느 잡도 통과할 수 없다.
 .github/
 .changeset/
+
+# 공공누리 출처 표시가 아직 끝나지 않은 HWP 문서들
+fixtures/kogl_hwp
+
+# 한컴 명세 전사본. 저작권 조항상 파생물 배포 불가, 로컬 참고용으로만 둔다.
+docs/spec/reference/
