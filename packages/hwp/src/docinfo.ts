@@ -432,7 +432,7 @@ function readCharShape(reader: ByteReader): CharShape {
   const underlineColor = reader.color();
   const shadeColor = reader.color();
   const shadowColor = reader.color();
-  const borderFillId = reader.optionalUint16();
+  const borderFillId = reader.optionalUint16(); // HWP 바이너리 안에는 1-indexed로 저장되어 있다. 파싱 처리 시 유의할 것.
   const strikeoutColor = reader.optionalColor();
 
   const shape: CharShape = {

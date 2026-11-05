@@ -357,7 +357,7 @@ export interface BorderFill {
 export enum UnderlineKind {
   None = 0,
   Bottom = 1,
-  Center = 2,
+  Center = 2, // 명세 상 존재하지 않으나, 실제로 이 값을 넣으면 가운데에 줄이 생김. 한컴오피스 한글에서 이 옵션 적용하는 경로 존재하지 않음.
   Top = 3,
 }
 
