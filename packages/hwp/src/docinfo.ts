@@ -466,6 +466,14 @@ function readCharShape(reader: ByteReader): CharShape {
       offsetX: shadowGapX,
       offsetY: shadowGapY,
     },
+    italic: false,
+    bold: false,
+    emboss: false,
+    engrave: false,
+    superscript: false,
+    subscript: false,
+    useFontSpace: false,
+    useKerning: false,
   };
 
   if (bit(properties, 0)) shape.italic = true;
