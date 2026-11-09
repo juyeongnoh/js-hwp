@@ -12,6 +12,7 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "tsc -b --pretty",
     "typecheck:watch": "tsc -b --pretty --watch",
+    "typecheck:watch:hwp": "tsc -b packages/hwp --pretty --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "editor": "npm run dev -w apps/editor",

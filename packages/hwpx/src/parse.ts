@@ -10,6 +10,7 @@
 
 import {
   Align,
+  HeadAlign,
   type BinDataItem,
   BinDataType,
   type BorderFill,
@@ -41,6 +42,7 @@ import { unzipSync } from "fflate";
 import {
   ENTRY,
   HEADING_TYPE,
+  HEAD_ALIGN,
   HORIZONTAL_ALIGN,
   LANG_ATTRS,
   LINE_SPACING_TYPE,
@@ -534,7 +536,7 @@ function parseNumberings(doc: HwpDocument, refList: XmlElement): void {
           formats.find(([, name]) => name === attr(head, "numFormat"))?.[0] ??
             0,
         ),
-        align: enumIndex(HORIZONTAL_ALIGN, attr(head, "align"), Align.Left),
+        align: enumIndex(HEAD_ALIGN, attr(head, "align"), HeadAlign.Left),
         widthAdjust: numAttr(head, "widthAdjust"),
         distance: numAttr(head, "textOffset", 50),
         distanceIsRatio: attr(head, "textOffsetType") === "PERCENT",

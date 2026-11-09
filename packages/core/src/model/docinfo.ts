@@ -596,17 +596,24 @@ export enum NumberFormat {
 }
 
 /** 번호 정의의 개요 수준 하나. */
+/** 문단 머리의 정렬(표 40). 값의 뜻이 문단 모양의 {@link Align}과 다르다. */
+export enum HeadAlign {
+  Left = 0,
+  Center = 1,
+  Right = 2,
+}
+
 export interface NumberingLevel {
   /** 예: `^1.` — `^1`..`^7`이 해당 수준의 카운터를 끼워 넣는다. */
   format: string;
   numberFormat: NumberFormat;
-  align: Align;
+  align: HeadAlign;
   /** 번호에서 텍스트까지의 거리. 비율(퍼센트) 또는 폭. */
   widthAdjust: number;
   /** 번호 뒤에서 텍스트가 들여쓰기되는 거리. */
   distance: number;
   /** {@link distance}를 번호 폭에 대한 퍼센트로 취급한다. */
-  distanceIsRatio?: boolean;
+  autoIndent?: boolean;
   /** 상위 수준의 번호를 포함한다. 예: `1.2.3`. */
   includeUpperLevels?: boolean;
   /** 이 수준에서 번호를 다시 시작한다. */

@@ -12,6 +12,7 @@
 
 import {
   Align,
+  HeadAlign,
   type BinDataItem,
   BinDataType,
   type BorderFill,
@@ -507,20 +508,19 @@ function readTabDef(reader: ByteReader): TabDef {
   };
 }
 
-function readParagraphHead(reader: ByteReader): NumberingLevel {
+// 명세 표 39는 전체 길이를 8B로 적지만 실제 파일은 필드 합과 같은 12B다.
+function readParagraphHead(reader: ByteReader): Omit<NumberingLevel, "format"> {
   const properties = reader.uint32();
   const widthAdjust = reader.int16();
   const distance = reader.int16();
   const charShapeId = reader.uint32();
-  const format = reader.optionalString();
 
   return {
-    format,
     numberFormat: bits(properties, 12, 15),
     align: bits(properties, 0, 1),
     widthAdjust,
     distance,
-    distanceIsRatio: bit(properties, 3),
+    autoIndent: bit(properties, 3),
     includeUpperLevels: bit(properties, 2),
     charShapeId: charShapeId === 0xffffffff ? undefined : charShapeId,
   };
@@ -528,25 +528,32 @@ function readParagraphHead(reader: ByteReader): NumberingLevel {
 
 function readNumbering(reader: ByteReader): Numbering {
   const levels: NumberingLevel[] = [];
-  for (let i = 0; i < 7 && reader.hasMore(12); i++)
-    levels.push(readParagraphHead(reader));
+  for (let i = 0; i < 7 && reader.hasMore(12); i++) {
+    const head = readParagraphHead(reader);
+    levels.push({ ...head, format: reader.optionalString() });
+  }
   const startNumber = reader.optionalUint16(1);
   return { levels, startNumber };
 }
 
 function readBullet(reader: ByteReader): Bullet {
-  const level = readParagraphHead(reader);
+  const level = { ...readParagraphHead(reader), format: "" };
   const char = String.fromCharCode(reader.optionalUint16(0x2022));
   const useImage = reader.optionalInt32();
   const bullet: Bullet = { char, level };
-  if (useImage !== 0 && reader.hasMore(7)) {
-    bullet.image = {
-      brightness: reader.uint8(),
-      contrast: reader.uint8(),
-      effect: reader.uint8(),
-      binDataId: reader.uint16(),
-    };
+  // 명세 표 42는 이미지 정보를 4B로 적지만 실제 레코드는 5B이고 체크 문자가
+  // 23번 오프셋에 있다. 구조는 채우기의 그림 정보와 같다고 본다.
+  // ponytail: 이미지 글머리표 실물 없이 추정한 해석. 실물이 생기면 검증할 것.
+  if (reader.hasMore(5)) {
+    const contrast = reader.int8();
+    const brightness = reader.int8();
+    const effect = reader.uint8();
+    const binDataId = reader.uint16() - 1;
+    if (useImage !== 0)
+      bullet.image = { contrast, brightness, effect, binDataId };
   }
+  const checkedChar = reader.optionalUint16();
+  if (checkedChar !== 0) bullet.checkedChar = String.fromCharCode(checkedChar);
   return bullet;
 }
 
@@ -916,17 +923,19 @@ function writeTabDef(def: TabDef): ByteWriter {
   return writer;
 }
 
-function writeParagraphHead(writer: ByteWriter, level: NumberingLevel): void {
+function writeParagraphHead(
+  writer: ByteWriter,
+  level: Omit<NumberingLevel, "format">,
+): void {
   let properties = 0;
   properties = setBits(properties, 0, 1, level.align);
   properties = setBit(properties, 2, level.includeUpperLevels);
-  properties = setBit(properties, 3, level.distanceIsRatio);
+  properties = setBit(properties, 3, level.autoIndent);
   properties = setBits(properties, 12, 15, level.numberFormat);
   writer.uint32(properties);
   writer.int16(level.widthAdjust);
   writer.int16(level.distance);
   writer.uint32(level.charShapeId ?? 0xffffffff);
-  writer.string(level.format);
 }
 
 function writeNumbering(numbering: Numbering): ByteWriter {
@@ -935,12 +944,13 @@ function writeNumbering(numbering: Numbering): ByteWriter {
     const level = numbering.levels[i] ?? {
       format: `^${i + 1}.`,
       numberFormat: 0,
-      align: Align.Left,
+      align: HeadAlign.Left,
       widthAdjust: 0,
       distance: 50,
-      distanceIsRatio: true,
+      autoIndent: true,
     };
     writeParagraphHead(writer, level);
+    writer.string(level.format);
   }
   writer.uint16(numbering.startNumber ?? 1);
   return writer;
@@ -950,13 +960,13 @@ function writeBullet(bullet: Bullet): ByteWriter {
   const writer = new ByteWriter();
   writeParagraphHead(writer, bullet.level);
   writer.uint16(bullet.char.charCodeAt(0));
-  writer.int32(bullet.image ? 1 : 0);
-  if (bullet.image) {
-    writer.uint8(bullet.image.brightness ?? 0);
-    writer.uint8(bullet.image.contrast ?? 0);
-    writer.uint8(bullet.image.effect ?? 0);
-    writer.uint16(bullet.image.binDataId);
-  }
+  const { image } = bullet;
+  writer.int32(image ? image.binDataId + 1 : 0);
+  writer.int8(image?.contrast ?? 0);
+  writer.int8(image?.brightness ?? 0);
+  writer.uint8(image?.effect ?? 0);
+  writer.uint16(image ? image.binDataId + 1 : 0);
+  writer.uint16(bullet.checkedChar?.charCodeAt(0) ?? 0);
   return writer;
 }
 

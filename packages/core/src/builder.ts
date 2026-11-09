@@ -42,6 +42,7 @@ import {
   type TableRow,
 } from "./model/controls.js";
 import {
+  HeadAlign,
   BinDataType,
   HeadingKind,
   StyleKind,
@@ -983,7 +984,7 @@ export class DocumentBuilder {
       levels: Array.from({ length: 7 }, (_, level) => ({
         format: `^${level + 1}.`,
         numberFormat: 0,
-        align: 1,
+        align: HeadAlign.Left,
         widthAdjust: 0,
         distance: 50,
         distanceIsRatio: true,
@@ -1002,10 +1003,10 @@ export class DocumentBuilder {
       level: {
         format: char,
         numberFormat: 0,
-        align: 1,
+        align: HeadAlign.Left,
         widthAdjust: 0,
         distance: 50,
-        distanceIsRatio: true,
+        autoIndent: true,
       },
     });
     return this.#doc.bullets.length - 1;

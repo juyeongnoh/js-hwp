@@ -88,6 +88,7 @@ export const PAGE_DIRECTION = {
 } as const
 
 export const HORIZONTAL_ALIGN = ['JUSTIFY', 'LEFT', 'RIGHT', 'CENTER', 'DISTRIBUTE', 'DIVISION'] as const
+export const HEAD_ALIGN = ['LEFT', 'CENTER', 'RIGHT'] as const
 export const VERTICAL_ALIGN = ['BASELINE', 'TOP', 'CENTER', 'BOTTOM'] as const
 
 export const LINE_SPACING_TYPE = ['PERCENT', 'FIXED', 'BETWEEN_LINES', 'AT_LEAST'] as const
