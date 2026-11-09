@@ -1,7 +1,6 @@
 {
   "name": "js-hwp",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.0.3",
   "description": "Read, write and edit Hangul (HWP) word processor documents in pure TypeScript",
   "license": "MIT",
   "publishConfig": {
