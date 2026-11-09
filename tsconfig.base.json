@@ -24,8 +24,6 @@
     "paths": {
       "@js-hwp/core": ["packages/core/src/index.ts"],
       "@js-hwp/hwp": ["packages/hwp/src/index.ts"],
-      "@js-hwp/hwpx": ["packages/hwpx/src/index.ts"],
-      "@js-hwp/render": ["packages/render/src/index.ts"],
       "js-hwp": ["packages/js-hwp/src/index.ts"]
     }
   }

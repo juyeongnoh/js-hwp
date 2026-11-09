@@ -8,15 +8,6 @@
       "path": "packages/hwp"
     },
     {
-      "path": "packages/hwpx"
-    },
-    {
-      "path": "packages/render"
-    },
-    {
-      "path": "packages/cli"
-    },
-    {
       "path": "packages/js-hwp"
     }
   ]

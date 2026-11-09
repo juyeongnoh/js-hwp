@@ -31,9 +31,6 @@
     "cfb": "^1.2.2",
     "fflate": "^0.8.2"
   },
-  "devDependencies": {
-    "@js-hwp/hwpx": "^0.0.1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/juyeongnoh/js-hwp.git",
