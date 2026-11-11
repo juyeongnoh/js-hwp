@@ -518,6 +518,9 @@ function readParagraphHead(reader: ByteReader): Omit<NumberingLevel, "format"> {
   return {
     // 명세 표 40에 위치가 없다. 한글에서 형식을 바꿔 저장한 test.hwp로 확인:
     // ㊀㊁㊂(14)=0x1CC, 비트 9를 켜면 한글이 甲乙丙(16)으로 표시한다.
+    // 한글 UI는 0~16만 고를 수 있으므로 비트 5~9만 읽고 쓴다. 비트 10~24를
+    // 켜면 한글이 1,2,3으로 그리지만 그 비트들의 의미는 확인하지 못했다
+    // (docs/hangul-behavior.md).
     numberFormat: bits(properties, 5, 9),
     // 속성 bit 0-1: 문단의 정렬 종류
     align: bits(properties, 0, 1),

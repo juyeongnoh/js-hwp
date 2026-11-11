@@ -626,7 +626,7 @@ export interface NumberingLevel {
   /** 0~16만 유효하다(속성 비트 5~9). 0x80·0x81은 각주/미주 전용(명세 표 134)이다. */
   numberFormat: NumberFormat;
   align: HeadAlign;
-  /** 너비 보정값(명세 표 39). */
+  /** 너비 보정값(명세 표 39). HWPUNIT이다. */
   widthAdjust: number;
   /** 본문과의 거리(명세 표 39) */
   distance: number;
@@ -634,7 +634,8 @@ export interface NumberingLevel {
   autoIndent?: boolean;
   /**
    * {@link distance}의 종류(명세 표 40 bit 4). false면 글자 크기에 대한 상대 비율(%),
-   * true면 값이다. 한글 UI의 "본문과의 간격" 단위.
+   * true면 HWPUNIT 값이다. 한글 UI의 "본문과의 간격"에서 길이 단위를 고르면 true가 된다.
+   * 고른 단위(mm, pt 등)는 파일에 저장되지 않는다.
    */
   distanceIsValue?: boolean;
   /** 번호 너비를 실제 인스턴스 문자열의 너비에 따른다(명세 표 40 bit 2). 한글 UI의 "번호 너비를 자릿수에 맞춤". */
