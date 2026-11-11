@@ -516,11 +516,15 @@ function readParagraphHead(reader: ByteReader): Omit<NumberingLevel, "format"> {
   const charShapeId = reader.uint32();
 
   return {
-    numberFormat: bits(properties, 12, 15),
+    // 명세 표 40에 위치가 없다. 한글에서 형식을 바꿔 저장한 test.hwp로 확인:
+    // ㊀㊁㊂(14)=0x1CC, 비트 9를 켜면 한글이 甲乙丙(16)으로 표시한다.
+    numberFormat: bits(properties, 5, 9),
+    // 속성 bit 0-1: 문단의 정렬 종류
     align: bits(properties, 0, 1),
     widthAdjust,
     distance,
     autoIndent: bit(properties, 3),
+    // 속성 bit 2: 번호 너비를 실제 인스턴스 문자열의 너비에 따를지 여부
     includeUpperLevels: bit(properties, 2),
     charShapeId: charShapeId === 0xffffffff ? undefined : charShapeId,
   };
@@ -931,7 +935,7 @@ function writeParagraphHead(
   properties = setBits(properties, 0, 1, level.align);
   properties = setBit(properties, 2, level.includeUpperLevels);
   properties = setBit(properties, 3, level.autoIndent);
-  properties = setBits(properties, 12, 15, level.numberFormat);
+  properties = setBits(properties, 5, 9, level.numberFormat);
   writer.uint32(properties);
   writer.int16(level.widthAdjust);
   writer.int16(level.distance);

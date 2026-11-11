@@ -574,23 +574,40 @@ export interface TabDef {
 // ---------------------------------------------------------------------------
 
 export enum NumberFormat {
+  /** 0: 1, 2, 3 */
   Digit = 0,
+  /** 1: 동그라미 쳐진 1, 2, 3 */
   CircledDigit = 1,
+  /** 2. I, II, III */
   RomanUpper = 2,
+  /** 3: i, ii, iii */
   RomanLower = 3,
+  /** 4. A, B, C */
   LatinUpper = 4,
+  /** 5. a, b, c */
   LatinLower = 5,
+  /** 6. 동그라미 쳐진 A, B, C */
   CircledLatinUpper = 6,
+  /** 7. 동그라미 쳐진 a, b, c */
   CircledLatinLower = 7,
+  /** 8: 가, 나, 다 */
   HangulSyllable = 8,
+  /** 9: 동그라미 쳐진 가, 나, 다 */
   CircledHangulSyllable = 9,
+  /** 10: ㄱ, ㄴ, ㄷ */
   HangulJamo = 10,
+  /** 11: 동그라미 쳐진 ㄱ, ㄴ, ㄷ */
   CircledHangulJamo = 11,
+  /** 12: 일, 이, 삼 */
   HangulPhonetic = 12,
+  /** 13: 一, 二, 三 */
   Ideograph = 13,
+  /** 14: 동그라미 쳐진 一, 二, 三 */
   CircledIdeograph = 14,
-  DecagonCircle = 15,
-  DecagonCircleHanja = 16,
+  /** 15: 갑, 을, 병 */
+  HeavenlyStemHangul = 15,
+  /** 16: 甲, 乙, 丙 */
+  HeavenlyStemHanja = 16,
   Symbol = 0x80,
   UserChar = 0x81,
 }
@@ -606,6 +623,7 @@ export enum HeadAlign {
 export interface NumberingLevel {
   /** 예: `^1.` — `^1`..`^7`이 해당 수준의 카운터를 끼워 넣는다. */
   format: string;
+  /** 0~16만 유효하다(속성 비트 5~9). 0x80·0x81은 각주/미주 전용(명세 표 134)이다. */
   numberFormat: NumberFormat;
   align: HeadAlign;
   /** 번호에서 텍스트까지의 거리. 비율(퍼센트) 또는 폭. */
