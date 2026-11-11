@@ -11,6 +11,10 @@
 | `fill-trailing-unknown-byte/` | 채우기 끝의 알 수 없는 1바이트가 표시에 영향을 주는지           |
 | `fill-multi-kind-priority/`   | 채우기 종류가 여러 개 켜졌을 때의 우선순위                      |
 | `colorref-high-byte/`         | COLORREF 최상위 바이트의 의미, `FFFFFFFF`가 "색 없음"인지       |
+| `numbering-format-bits/`      | 문단 번호 형식이 문단 머리 정보 속성 bit 5부터 저장되는지       |
+| `numbering-format-high-bits/` | 번호 형식 위쪽 비트(bit 10~31)를 켰을 때 한글의 표시            |
+| `numbering-align-out-of-range/` | 문단 머리 정렬 값 3(명세 밖)의 처리                           |
+| `numbering-distance-kind/`    | 본문과의 거리 종류(bit 4)와 값의 단위                           |
 | `scripts/`                    | 실험 파일 생성·검사 스크립트 (공용)                             |
 
 새 실험을 추가하면 이 표에 한 줄을 넣는다.

@@ -256,7 +256,7 @@ bit 10은 명세에서 BackSlash 꺾은선으로 정의하므로 `backSlashCrook
 
 ## 2026-11-11~12 실험 기록: 문단 번호 (표 38~41)
 
-환경은 macOS용 한컴오피스 한글 12.30.0(6544)이다. 실험 파일은 아직 `experiments/`로 옮기지 않았고 로컬 `scratch/`에만 있다. 한글의 표시 동작은 `hangul-behavior.md`의 "문단 번호 모양"에 적었다.
+환경은 macOS용 한컴오피스 한글 12.30.0(6544)이다. 실험 파일은 `experiments/numbering-format-bits`, `numbering-format-high-bits`, `numbering-align-out-of-range`, `numbering-distance-kind`에 있다. 한글의 표시 동작은 `hangul-behavior.md`의 "문단 번호 모양"에 적었다.
 
 ### E14. 문단 머리 정보와 속성 비트
 
