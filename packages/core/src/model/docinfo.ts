@@ -626,12 +626,17 @@ export interface NumberingLevel {
   /** 0~16만 유효하다(속성 비트 5~9). 0x80·0x81은 각주/미주 전용(명세 표 134)이다. */
   numberFormat: NumberFormat;
   align: HeadAlign;
-  /** 번호에서 텍스트까지의 거리. 비율(퍼센트) 또는 폭. */
+  /** 너비 보정값(명세 표 39). */
   widthAdjust: number;
-  /** 번호 뒤에서 텍스트가 들여쓰기되는 거리. */
+  /** 본문과의 거리(명세 표 39) */
   distance: number;
-  /** {@link distance}를 번호 폭에 대한 퍼센트로 취급한다. */
+  /** 자동 내어 쓰기(명세 표 40 bit 3). */
   autoIndent?: boolean;
+  /**
+   * {@link distance}의 종류(명세 표 40 bit 4). false면 글자 크기에 대한 상대 비율(%),
+   * true면 값이다. 한글 UI의 "본문과의 간격" 단위.
+   */
+  distanceIsValue?: boolean;
   /** 번호 너비를 실제 인스턴스 문자열의 너비에 따른다(명세 표 40 bit 2). 한글 UI의 "번호 너비를 자릿수에 맞춤". */
   useInstanceWidth?: boolean;
   /** 이 수준에서 번호를 다시 시작한다. */

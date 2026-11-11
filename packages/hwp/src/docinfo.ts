@@ -523,7 +523,10 @@ function readParagraphHead(reader: ByteReader): Omit<NumberingLevel, "format"> {
     align: bits(properties, 0, 1),
     widthAdjust,
     distance,
+    // 속성 bit 3: 자동 내어 쓰기 여부
     autoIndent: bit(properties, 3),
+    // 속성 bit 4: 수준별 본문과의 거리 종류
+    distanceIsValue: bit(properties, 4),
     // 속성 bit 2: 번호 너비를 실제 인스턴스 문자열의 너비에 따를지 여부
     useInstanceWidth: bit(properties, 2),
     charShapeId: charShapeId === 0xffffffff ? undefined : charShapeId,
@@ -935,6 +938,7 @@ function writeParagraphHead(
   properties = setBits(properties, 0, 1, level.align);
   properties = setBit(properties, 2, level.useInstanceWidth);
   properties = setBit(properties, 3, level.autoIndent);
+  properties = setBit(properties, 4, level.distanceIsValue);
   properties = setBits(properties, 5, 9, level.numberFormat);
   writer.uint32(properties);
   writer.int16(level.widthAdjust);
