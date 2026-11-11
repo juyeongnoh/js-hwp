@@ -632,8 +632,8 @@ export interface NumberingLevel {
   distance: number;
   /** {@link distance}를 번호 폭에 대한 퍼센트로 취급한다. */
   autoIndent?: boolean;
-  /** 상위 수준의 번호를 포함한다. 예: `1.2.3`. */
-  includeUpperLevels?: boolean;
+  /** 번호 너비를 실제 인스턴스 문자열의 너비에 따른다(명세 표 40 bit 2). 한글 UI의 "번호 너비를 자릿수에 맞춤". */
+  useInstanceWidth?: boolean;
   /** 이 수준에서 번호를 다시 시작한다. */
   startNumber?: number;
   charShapeId?: number;
