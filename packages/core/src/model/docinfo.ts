@@ -640,13 +640,18 @@ export interface NumberingLevel {
   distanceIsValue?: boolean;
   /** 번호 너비를 실제 인스턴스 문자열의 너비에 따른다(명세 표 40 bit 2). 한글 UI의 "번호 너비를 자릿수에 맞춤". */
   useInstanceWidth?: boolean;
-  /** 이 수준에서 번호를 다시 시작한다. */
+  /** 수준별 시작번호(명세 표 38, 5.0.2.5 이상). 없으면 1. */
   startNumber?: number;
   charShapeId?: number;
 }
 
 export interface Numbering {
+  /** 1~10수준. 8~10수준은 5.1.0.0 이상의 확장 수준이다. 비어 있는 수준은 쓸 때 기본값을 채운다. */
   levels: NumberingLevel[];
+  /**
+   * 레코드에 하나 있는 시작 번호 UINT16(명세 표 38). 한글은 1수준 번호를 표시할 때 이 값이
+   * 아니라 `levels[0].startNumber`를 쓴다. 뜻은 미확인이며 왕복 보존용이다.
+   */
   startNumber?: number;
 }
 

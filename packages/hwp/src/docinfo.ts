@@ -28,6 +28,7 @@ import {
   type HwpDocument,
   HeadingKind,
   type Numbering,
+  NumberFormat,
   type NumberingLevel,
   type ParaShape,
   type PerLang,
@@ -537,13 +538,30 @@ function readParagraphHead(reader: ByteReader): Omit<NumberingLevel, "format"> {
 }
 
 function readNumbering(reader: ByteReader): Numbering {
+  // 1~7수준과 시작 번호에는 버전 조건이 없다(명세 표 38). 측정한 88개 모두 있었다.
   const levels: NumberingLevel[] = [];
-  for (let i = 0; i < 7 && reader.hasMore(12); i++) {
-    const head = readParagraphHead(reader);
-    levels.push({ ...head, format: reader.optionalString() });
+  for (let i = 0; i < 7; i++) levels.push(readNumberingLevel(reader));
+  const startNumber = reader.uint16();
+  // 명세 표 38은 수준별 시작번호(5.0.2.5 이상)와 8~10수준(5.1.0.0 이상)을 버전으로
+  // 조건 짓는다. 레코드에 남은 바이트로 판단한다. 실제 파일 88개 측정: 5.0.3.0은
+  // 시작번호 7개에서 끝나고, 5.1.0.1·5.1.1.0은 8~10수준까지 있었다.
+  // 8~10수준도 1~7수준과 같은 12B 머리 정보를 갖고, 확장 시작번호 3개는 세 수준이
+  // 다 끝난 뒤 이어진다(명세 표는 머리 정보를 빠뜨리고 시작번호를 반복 안에 둔다).
+  // 시작번호는 수준 순서대로다. 1·2·9수준에 52·5·7을 지정한 파일에서 각 자리에
+  // 해당 값이 있었다(docs/experiments/numbering-extended-levels).
+  if (reader.remaining > 0) {
+    for (let i = 0; i < 7; i++) levels[i]!.startNumber = reader.uint32();
   }
-  const startNumber = reader.optionalUint16(1);
+  if (reader.remaining > 0) {
+    for (let i = 7; i < 10; i++) levels.push(readNumberingLevel(reader));
+    for (let i = 7; i < 10; i++) levels[i]!.startNumber = reader.uint32();
+  }
   return { levels, startNumber };
+}
+
+function readNumberingLevel(reader: ByteReader): NumberingLevel {
+  const head = readParagraphHead(reader);
+  return { ...head, format: reader.string() };
 }
 
 function readBullet(reader: ByteReader): Bullet {
@@ -950,21 +968,54 @@ function writeParagraphHead(
 }
 
 function writeNumbering(numbering: Numbering): ByteWriter {
+  // 아이디 매핑처럼 늘 최신(5.1) 형식으로 쓴다: 1~7수준, 시작 번호, 수준별 시작번호,
+  // 8~10수준, 확장 시작번호.
   const writer = new ByteWriter();
-  for (let i = 0; i < 7; i++) {
-    const level = numbering.levels[i] ?? {
-      format: `^${i + 1}.`,
-      numberFormat: 0,
-      align: HeadAlign.Left,
-      widthAdjust: 0,
-      distance: 50,
-      autoIndent: true,
-    };
+  const levels = Array.from(
+    { length: 10 },
+    (_, i) => numbering.levels[i] ?? defaultNumberingLevel(i),
+  );
+  const writeLevel = (level: NumberingLevel) => {
     writeParagraphHead(writer, level);
     writer.string(level.format);
-  }
+  };
+  levels.slice(0, 7).forEach(writeLevel);
   writer.uint16(numbering.startNumber ?? 1);
+  for (const level of levels.slice(0, 7)) writer.uint32(level.startNumber ?? 1);
+  levels.slice(7).forEach(writeLevel);
+  for (const level of levels.slice(7)) writer.uint32(level.startNumber ?? 1);
   return writer;
+}
+
+// 8~10수준은 한글이 저장한 기본값(5.1.1.0 레코드 48개에서 같았다)을 따른다:
+// 속성 0x12C·0x14C·0x6C, 형식 문자열은 8수준만 `^8`.
+const EXTENDED_LEVEL_DEFAULTS: Pick<
+  NumberingLevel,
+  "format" | "numberFormat"
+>[] = [
+  { format: "^8", numberFormat: NumberFormat.CircledHangulSyllable },
+  { format: "", numberFormat: NumberFormat.HangulJamo },
+  { format: "", numberFormat: NumberFormat.RomanLower },
+];
+
+function defaultNumberingLevel(index: number): NumberingLevel {
+  const base = {
+    align: HeadAlign.Left,
+    widthAdjust: 0,
+    distance: 50,
+    autoIndent: true,
+  };
+  if (index < 7)
+    return {
+      ...base,
+      format: `^${index + 1}.`,
+      numberFormat: NumberFormat.Digit,
+    };
+  return {
+    ...base,
+    useInstanceWidth: true,
+    ...EXTENDED_LEVEL_DEFAULTS[index - 7]!,
+  };
 }
 
 function writeBullet(bullet: Bullet): ByteWriter {
