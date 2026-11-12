@@ -15,6 +15,8 @@
 | `numbering-format-high-bits/` | 번호 형식 위쪽 비트(bit 10~31)를 켰을 때 한글의 표시            |
 | `numbering-align-out-of-range/` | 문단 머리 정렬 값 3(명세 밖)의 처리                           |
 | `numbering-distance-kind/`    | 본문과의 거리 종류(bit 4)와 값의 단위                           |
+| `numbering-extended-levels/`  | 수준별 시작번호·8~10수준의 위치, 9·10수준 문단의 수준 저장 위치 |
+| `numbering-start-number-source/` | 시작 번호 UINT16과 1수준 시작번호 중 한글이 표시에 쓰는 값 |
 | `scripts/`                    | 실험 파일 생성·검사 스크립트 (공용)                             |
 
 새 실험을 추가하면 이 표에 한 줄을 넣는다.
