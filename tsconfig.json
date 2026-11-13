@@ -9,6 +9,9 @@
     },
     {
       "path": "packages/js-hwp"
+    },
+    {
+      "path": "packages/watch"
     }
   ]
 }

@@ -1,0 +1,21 @@
+{
+  "name": "@js-hwp/watch",
+  "version": "0.0.0",
+  "private": true,
+  "description": "HWP 파일을 지켜보며 저장할 때마다 레코드·비트 단위로 바뀐 곳을 출력하는 CLI",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "hwp-watch": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b && chmod +x dist/cli.js"
+  },
+  "dependencies": {
+    "@js-hwp/hwp": "0.0.2",
+    "cfb": "^1.2.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
