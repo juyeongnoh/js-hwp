@@ -570,8 +570,9 @@ function readBullet(reader: ByteReader): Bullet {
   const useImage = reader.optionalInt32();
   const bullet: Bullet = { char, level };
   // 명세 표 42는 이미지 정보를 4B로 적지만 실제 레코드는 5B이고 체크 문자가
-  // 23번 오프셋에 있다. 구조는 채우기의 그림 정보와 같다고 본다.
-  // ponytail: 이미지 글머리표 실물 없이 추정한 해석. 실물이 생기면 검증할 것.
+  // 23번 오프셋에 있다. ID는 uint16으로 본다: 맥 한글 실물에서 [21..22]
+  // `03 00`을 `03 01`로 바꾸면 그림이 사라진다. [22]가 0이어야 하는 예약
+  // 바이트일 가능성은 ID 256 이상 실물 없이는 배제하지 못했다.
   if (reader.hasMore(5)) {
     const contrast = reader.int8();
     const brightness = reader.int8();
@@ -1023,7 +1024,8 @@ function writeBullet(bullet: Bullet): ByteWriter {
   writeParagraphHead(writer, bullet.level);
   writer.uint16(bullet.char.charCodeAt(0));
   const { image } = bullet;
-  writer.int32(image ? image.binDataId + 1 : 0);
+  // 명세는 이미지 ID를 적는다고 하지만 한글은 1을 쓴다. ID는 아래 uint16에 있다.
+  writer.int32(image ? 1 : 0);
   writer.int8(image?.contrast ?? 0);
   writer.int8(image?.brightness ?? 0);
   writer.uint8(image?.effect ?? 0);

@@ -80,7 +80,7 @@ export function byteLines(
       if ((x ^ y) & m) bits.push(`${k}${y & m ? "↑" : "↓"}`);
     }
     lines.push(
-      `${indent}+0x${hex(i, 4)}  ${hex(x)}→${hex(y)}  ${bin(x)}→${bin(y)}  bit ${bits.join(" ")}`,
+      `${indent}+0x${hex(i, 4)} ${`[${i}]`.padEnd(6)}${hex(x)}→${hex(y)}  ${bin(x)}→${bin(y)}  bit ${bits.join(" ")}`,
     );
   }
   if (changed > MAX_BYTES)
