@@ -704,7 +704,7 @@ export class DocumentBuilder {
     const paraShapeId = this.#resources.paraShape({
       ...this.#resources.getParaShape(this.#paraShapeId),
       marginLeft: toHalfHwpUnit(indentStep * (level + 1)),
-      indent: -indentStep,
+      indent: toHalfHwpUnit(-indentStep),
       headingKind: kind === "bullet" ? HeadingKind.Bullet : HeadingKind.Number,
       headingLevel: level,
       headingId:

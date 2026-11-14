@@ -238,7 +238,7 @@ export function applyParagraphStyle(base: ParaShape, style: ParagraphStyle): Par
   const right = length(style.marginRight)
   if (right !== undefined) shape.marginRight = toHalfHwpUnit(right)
   const indent = length(style.indent)
-  if (indent !== undefined) shape.indent = indent
+  if (indent !== undefined) shape.indent = toHalfHwpUnit(indent)
 
   if (style.keepWithNext !== undefined) shape.keepWithNext = style.keepWithNext
   if (style.keepLines !== undefined) shape.keepLines = style.keepLines

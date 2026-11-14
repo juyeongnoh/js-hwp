@@ -14,7 +14,7 @@ export type SHwpUnit = number
 
 /**
  * HWPUNIT의 절반(1/14400 인치) 길이. 1pt = 200, 부호 있음.
- * 문단 모양의 여백과 문단 간격은 이 단위로 저장된다(정오표 E18).
+ * 문단 모양의 여백, 첫 줄 들여쓰기, 문단 간격은 이 단위로 저장된다(정오표 E18).
  */
 export type HalfHwpUnit = number
 
