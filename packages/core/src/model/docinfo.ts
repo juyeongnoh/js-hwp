@@ -8,7 +8,7 @@
  */
 
 import { rgb, type Rgb } from "./color.js";
-import type { HwpUnit, SHwpUnit } from "./units.js";
+import type { HalfHwpUnit, HwpUnit, SHwpUnit } from "./units.js";
 
 /**
  * HWP는 글꼴을 문자 체계별로 해석한다. 글자 모양의 모든 언어별 배열이 이
@@ -502,14 +502,15 @@ export interface ParagraphBorder {
 
 export interface ParaShape {
   align: Align;
-  /** 왼쪽 들여쓰기, HWPUNIT. */
-  marginLeft: SHwpUnit;
-  marginRight: SHwpUnit;
-  /** 첫 줄 들여쓰기. 음수면 내어쓰기가 된다. */
+  /** 왼쪽 여백. HWPUNIT이 아니라 그 절반 단위다. */
+  marginLeft: HalfHwpUnit;
+  marginRight: HalfHwpUnit;
+  /** 첫 줄 들여쓰기. 음수면 내어쓰기가 된다. 단위는 확인하지 않았다. */
   indent: SHwpUnit;
-  marginTop: SHwpUnit;
-  marginBottom: SHwpUnit;
-
+  /** 문단 간격 위. */
+  marginTop: HalfHwpUnit;
+  marginBottom: HalfHwpUnit;
+  /** 줄바꿈 (%) */
   lineSpacing: { kind: LineSpacingKind; value: number };
 
   lineBreakLatin?: LineBreakLatin;

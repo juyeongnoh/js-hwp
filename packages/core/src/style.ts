@@ -21,7 +21,7 @@ import {
   UnderlineKind,
   VerticalAlign,
 } from './model/docinfo.js'
-import { type HwpUnit, parseLength, pt } from './model/units.js'
+import { type HwpUnit, parseLength, pt, toHalfHwpUnit } from './model/units.js'
 import type { Resources } from './resources.js'
 
 export type AlignName = 'left' | 'center' | 'right' | 'justify' | 'distribute' | 'division'
@@ -230,13 +230,13 @@ export function applyParagraphStyle(base: ParaShape, style: ParagraphStyle): Par
   }
 
   const before = length(style.spaceBefore)
-  if (before !== undefined) shape.marginTop = before
+  if (before !== undefined) shape.marginTop = toHalfHwpUnit(before)
   const after = length(style.spaceAfter)
-  if (after !== undefined) shape.marginBottom = after
+  if (after !== undefined) shape.marginBottom = toHalfHwpUnit(after)
   const left = length(style.marginLeft)
-  if (left !== undefined) shape.marginLeft = left
+  if (left !== undefined) shape.marginLeft = toHalfHwpUnit(left)
   const right = length(style.marginRight)
-  if (right !== undefined) shape.marginRight = right
+  if (right !== undefined) shape.marginRight = toHalfHwpUnit(right)
   const indent = length(style.indent)
   if (indent !== undefined) shape.indent = indent
 

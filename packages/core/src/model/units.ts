@@ -12,6 +12,14 @@ export type HwpUnit = number
 /** 부호 있는 HWPUNIT 길이. */
 export type SHwpUnit = number
 
+/**
+ * HWPUNIT의 절반(1/14400 인치) 길이. 1pt = 200, 부호 있음.
+ * 문단 모양의 여백과 문단 간격은 이 단위로 저장된다(정오표 E18).
+ */
+export type HalfHwpUnit = number
+
+export const toHalfHwpUnit = (value: HwpUnit): HalfHwpUnit => value * 2
+
 export const HWPUNIT_PER_INCH = 7200
 export const HWPUNIT_PER_POINT = 100
 /** 1 인치 = 25.4mm이므로 7200 / 25.4 */

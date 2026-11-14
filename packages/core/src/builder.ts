@@ -63,6 +63,7 @@ import {
   mm,
   parseLength,
   pt,
+  toHalfHwpUnit,
 } from "./model/units.js";
 import { Resources } from "./resources.js";
 import {
@@ -673,8 +674,8 @@ export class DocumentBuilder {
     );
     const paraShapeId = this.#resources.paraShape({
       ...this.#resources.getParaShape(this.#paraShapeId),
-      marginTop: pt(clamped <= 2 ? 12 : 8),
-      marginBottom: pt(4),
+      marginTop: toHalfHwpUnit(pt(clamped <= 2 ? 12 : 8)),
+      marginBottom: toHalfHwpUnit(pt(4)),
       keepWithNext: true,
       headingKind: HeadingKind.Outline,
       headingLevel: clamped - 1,
@@ -702,7 +703,7 @@ export class DocumentBuilder {
 
     const paraShapeId = this.#resources.paraShape({
       ...this.#resources.getParaShape(this.#paraShapeId),
-      marginLeft: indentStep * (level + 1),
+      marginLeft: toHalfHwpUnit(indentStep * (level + 1)),
       indent: -indentStep,
       headingKind: kind === "bullet" ? HeadingKind.Bullet : HeadingKind.Number,
       headingLevel: level,
