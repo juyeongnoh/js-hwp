@@ -542,6 +542,21 @@ export interface ParaShape {
   /** 한글과 라틴 문자 / 숫자 사이의 자동 자간 조절을 끈다. */
   autoSpaceLatin?: boolean;
   autoSpaceNumber?: boolean;
+
+  /**
+   * 원본 레코드 형식. 46은 5.0.2.5의 46B(속성 3과 새 줄 간격 없음, 줄 간격 종류는
+   * 속성 1 bit 0-1), 54는 5.0.4~5.0.5의 54B다. 없으면 한글 5.1 형식(54B + 4B)으로 쓴다.
+   */
+  recordLayout?: 46 | 54;
+  /** 속성 1·2·3에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. */
+  unknownBits1?: number;
+  unknownBits2?: number;
+  unknownBits3?: number;
+  /**
+   * 알려진 필드 뒤의 바이트. 5.1 한글은 54B 뒤에 명세에 없는 4B를 쓴다(실측 값 0~9 등).
+   * 없고 {@link recordLayout}도 없으면 0 네 바이트를 쓴다.
+   */
+  trailing?: Uint8Array;
 }
 
 // ---------------------------------------------------------------------------

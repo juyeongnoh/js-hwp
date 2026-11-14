@@ -603,12 +603,17 @@ function readParaShape(reader: ByteReader): ParaShape {
   const borderOffsetBottom = reader.int16();
 
   const properties2 = reader.optionalUint32();
-  const properties3 = reader.optionalUint32();
-  const lineSpacingNew = reader.optionalUint32();
+  // 5.0.2.5 레코드는 46B에서 끝난다(속성 3과 새 줄 간격 없음). 실측 46·54·58B.
+  const short = reader.length < 54;
+  const properties3 = short ? 0 : reader.uint32();
+  const lineSpacingNew = short ? 0 : reader.uint32();
+  const trailing = reader.rest();
 
   const headingKind = bits(properties1, 23, 24) as HeadingKind;
-  const lineSpacingKind =
-    reader.length >= 54 ? bits(properties3, 0, 4) : bits(properties1, 0, 1);
+  const headingLevel = bits(properties1, 25, 27);
+  const lineSpacingKind = short
+    ? bits(properties1, 0, 1)
+    : bits(properties3, 0, 4);
 
   const shape: ParaShape = {
     align: bits(properties1, 2, 4) as Align,
@@ -635,13 +640,22 @@ function readParaShape(reader: ByteReader): ParaShape {
     autoSpaceNumber: bit(properties2, 5),
   };
 
-  if (headingKind !== HeadingKind.None) {
-    shape.headingKind = headingKind;
+  // 머리 종류가 없어도 0이 아닌 id·수준은 보존한다. 테두리도 같다.
+  // 샘플 2427개에는 그런 레코드가 없었다.
+  if (headingKind !== HeadingKind.None) shape.headingKind = headingKind;
+  if (headingKind !== HeadingKind.None || numberingBulletId !== 0)
     shape.headingId = numberingBulletId;
-    shape.headingLevel = bits(properties1, 25, 27);
-  }
+  if (headingKind !== HeadingKind.None || headingLevel !== 0)
+    shape.headingLevel = headingLevel;
 
-  if (borderFillId !== 0) {
+  if (
+    borderFillId !== 0 ||
+    borderOffsetLeft !== 0 ||
+    borderOffsetRight !== 0 ||
+    borderOffsetTop !== 0 ||
+    borderOffsetBottom !== 0 ||
+    bits(properties1, 28, 29) !== 0
+  ) {
     shape.border = {
       borderFillId,
       offsetLeft: borderOffsetLeft,
@@ -653,8 +667,25 @@ function readParaShape(reader: ByteReader): ParaShape {
     };
   }
 
+  // 실측에서 켜진 모르는 비트: 속성 1 bit 10-13(명세의 공백 최소값 9-15), 속성 2 bit 0·3.
+  const unknown1 =
+    (properties1 & ~(short ? PARA_KNOWN1 | 0b11 : PARA_KNOWN1)) >>> 0;
+  const unknown2 = (properties2 & ~PARA_KNOWN2) >>> 0;
+  const unknown3 = (properties3 & ~PARA_KNOWN3) >>> 0;
+  if (unknown1) shape.unknownBits1 = unknown1;
+  if (unknown2) shape.unknownBits2 = unknown2;
+  if (unknown3) shape.unknownBits3 = unknown3;
+  if (short) shape.recordLayout = 46;
+  else if (trailing.length === 0) shape.recordLayout = 54;
+  if (trailing.length > 0) shape.trailing = trailing;
+
   return shape;
 }
+
+// 문단 모양 속성 1 bit 2-8, 16-29. bit 0-1(옛 줄 간격 종류)은 46B 레코드에서만 쓴다.
+const PARA_KNOWN1 = 0x3fff01fc;
+const PARA_KNOWN2 = 0x30;
+const PARA_KNOWN3 = 0x1f;
 
 function readStyle(reader: ByteReader): Style {
   const name = reader.string();
@@ -1036,8 +1067,10 @@ function writeBullet(bullet: Bullet): ByteWriter {
 
 function writeParaShape(shape: ParaShape): ByteWriter {
   const writer = new ByteWriter();
+  const short = shape.recordLayout === 46;
 
-  let properties1 = 0;
+  let properties1 = shape.unknownBits1 ?? 0;
+  if (short) properties1 = setBits(properties1, 0, 1, shape.lineSpacing.kind);
   properties1 = setBits(properties1, 2, 4, shape.align);
   properties1 = setBits(properties1, 5, 6, shape.lineBreakLatin ?? 0);
   properties1 = setBit(properties1, 7, shape.lineBreakHangul === 1);
@@ -1073,16 +1106,20 @@ function writeParaShape(shape: ParaShape): ByteWriter {
   writer.int16(shape.border?.offsetTop ?? 0);
   writer.int16(shape.border?.offsetBottom ?? 0);
 
-  let properties2 = 0;
+  let properties2 = shape.unknownBits2 ?? 0;
   properties2 = setBit(properties2, 4, shape.autoSpaceLatin);
   properties2 = setBit(properties2, 5, shape.autoSpaceNumber);
   writer.uint32(properties2);
 
-  let properties3 = 0;
-  properties3 = setBits(properties3, 0, 4, shape.lineSpacing.kind);
-  writer.uint32(properties3);
+  if (!short) {
+    let properties3 = shape.unknownBits3 ?? 0;
+    properties3 = setBits(properties3, 0, 4, shape.lineSpacing.kind);
+    writer.uint32(properties3);
+    writer.uint32(shape.lineSpacing.value);
+  }
 
-  writer.uint32(shape.lineSpacing.value);
+  if (shape.trailing) writer.bytes(shape.trailing);
+  else if (shape.recordLayout === undefined) writer.zeros(4);
   return writer;
 }
 
