@@ -607,10 +607,12 @@ function readParaShape(reader: ByteReader): ParaShape {
   const short = reader.length < 54;
   const properties3 = short ? 0 : reader.uint32();
   const lineSpacingNew = short ? 0 : reader.uint32();
+  // 5.1 한글은 문단 수준(0~9)을 끝에 더 쓴다. bit 25-27은 min(수준, 6)이다(정오표 정정 41, 42).
+  const hasLevel = !short && reader.remaining >= 4;
+  const headingLevel = hasLevel ? reader.uint32() : bits(properties1, 25, 27);
   const trailing = reader.rest();
 
   const headingKind = bits(properties1, 23, 24) as HeadingKind;
-  const headingLevel = bits(properties1, 25, 27);
   const lineSpacingKind = short
     ? bits(properties1, 0, 1)
     : bits(properties3, 0, 4);
@@ -676,7 +678,7 @@ function readParaShape(reader: ByteReader): ParaShape {
   if (unknown2) shape.unknownBits2 = unknown2;
   if (unknown3) shape.unknownBits3 = unknown3;
   if (short) shape.recordLayout = 46;
-  else if (trailing.length === 0) shape.recordLayout = 54;
+  else if (!hasLevel) shape.recordLayout = 54;
   if (trailing.length > 0) shape.trailing = trailing;
 
   return shape;
@@ -1087,7 +1089,13 @@ function writeParaShape(shape: ParaShape): ByteWriter {
     24,
     shape.headingKind ?? HeadingKind.None,
   );
-  properties1 = setBits(properties1, 25, 27, shape.headingLevel ?? 0);
+  const level = shape.headingLevel ?? 0;
+  const hasLevel = shape.recordLayout === undefined;
+  if (!hasLevel && level > 6)
+    throw new RangeError(
+      `문단 수준 ${level + 1}은 ${shape.recordLayout}B 문단 모양에 쓸 수 없다(7수준까지).`,
+    );
+  properties1 = setBits(properties1, 25, 27, Math.min(level, 6));
   properties1 = setBit(properties1, 28, shape.border?.connect);
   properties1 = setBit(properties1, 29, shape.border?.ignoreMargin);
 
@@ -1118,8 +1126,8 @@ function writeParaShape(shape: ParaShape): ByteWriter {
     writer.uint32(shape.lineSpacing.value);
   }
 
+  if (hasLevel) writer.uint32(level);
   if (shape.trailing) writer.bytes(shape.trailing);
-  else if (shape.recordLayout === undefined) writer.zeros(4);
   return writer;
 }
 

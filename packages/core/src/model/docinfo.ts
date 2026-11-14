@@ -521,6 +521,7 @@ export interface ParaShape {
   /** {@link headingKind}에 따라 번호 매기기 또는 글머리표의 인덱스. */
   headingKind?: HeadingKind;
   headingId?: number;
+  /** 0부터 센 문단 수준. 한글은 0~9(1~10수준)를 쓴다. */
   headingLevel?: number;
 
   border?: ParagraphBorder;
@@ -531,7 +532,7 @@ export interface ParaShape {
   keepLines?: boolean;
   /** 이 문단 앞에서 쪽 나눔을 강제한다. */
   pageBreakBefore?: boolean;
-  /** 쪽 경계에 홀로 남는 첫 줄/끝 줄을 막는다. */
+  /** 외톨이줄 보호 */
   widowOrphan?: boolean;
   /** 텍스트를 문서 격자에 맞춘다. */
   snapToGrid?: boolean;
@@ -546,7 +547,8 @@ export interface ParaShape {
 
   /**
    * 원본 레코드 형식. 46은 5.0.2.5의 46B(속성 3과 새 줄 간격 없음, 줄 간격 종류는
-   * 속성 1 bit 0-1), 54는 5.0.4~5.0.5의 54B다. 없으면 한글 5.1 형식(54B + 4B)으로 쓴다.
+   * 속성 1 bit 0-1), 54는 5.0.4~5.0.5의 54B다. 둘 다 문단 수준을 7수준까지만 담는다.
+   * 없으면 한글 5.1 형식(54B + 문단 수준 4B)으로 쓴다.
    */
   recordLayout?: 46 | 54;
   /** 속성 1·2·3에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. */
@@ -554,8 +556,7 @@ export interface ParaShape {
   unknownBits2?: number;
   unknownBits3?: number;
   /**
-   * 알려진 필드 뒤의 바이트. 5.1 한글은 54B 뒤에 명세에 없는 4B를 쓴다(실측 값 0~9 등).
-   * 없고 {@link recordLayout}도 없으면 0 네 바이트를 쓴다.
+   * 알려진 필드 뒤의 바이트. 쓸 때 끝에 그대로 붙인다. 실물에서는 본 적 없다.
    */
   trailing?: Uint8Array;
 }
