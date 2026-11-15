@@ -642,6 +642,12 @@ function readParaShape(reader: ByteReader): ParaShape {
     autoSpaceNumber: bit(properties2, 5),
   };
 
+  // 공백 최소값은 100에서 뺀 값(0~75)이다(정오표 E21). 범위 밖 값은 모르는 비트로 보존한다.
+  const condenseStored = bits(properties1, 9, 15);
+  const condenseKnown = condenseStored <= 75;
+  if (condenseKnown && condenseStored !== 0)
+    shape.condense = 100 - condenseStored;
+
   // 머리 종류가 없어도 0이 아닌 id·수준은 보존한다. 테두리도 같다.
   // 샘플 2427개에는 그런 레코드가 없었다.
   if (headingKind !== HeadingKind.None) shape.headingKind = headingKind;
@@ -669,9 +675,11 @@ function readParaShape(reader: ByteReader): ParaShape {
     };
   }
 
-  // 실측에서 켜진 모르는 비트: 속성 1 bit 10-13(명세의 공백 최소값 9-15), 속성 2 bit 0·3.
+  // 실측에서 켜진 모르는 비트: 속성 2 bit 0·3.
   const unknown1 =
-    (properties1 & ~(short ? PARA_KNOWN1 | 0b11 : PARA_KNOWN1)) >>> 0;
+    (properties1 &
+      ~(condenseKnown ? PARA_KNOWN1 | PARA_CONDENSE : PARA_KNOWN1)) >>>
+    0;
   const unknown2 = (properties2 & ~PARA_KNOWN2) >>> 0;
   const unknown3 = (properties3 & ~PARA_KNOWN3) >>> 0;
   if (unknown1) shape.unknownBits1 = unknown1;
@@ -686,6 +694,8 @@ function readParaShape(reader: ByteReader): ParaShape {
 
 // 문단 모양 속성 1 bit 0-8, 16-29. bit 0-1(옛 줄 간격 종류)은 새 줄 간격에서 정한다.
 const PARA_KNOWN1 = 0x3fff01ff;
+/** 속성 1 bit 9-15, 공백 최소값. */
+const PARA_CONDENSE = 0xfe00;
 const PARA_KNOWN2 = 0x30;
 const PARA_KNOWN3 = 0x1f;
 
@@ -1086,6 +1096,12 @@ function writeParaShape(shape: ParaShape): ByteWriter {
   properties1 = setBits(properties1, 5, 6, shape.lineBreakLatin ?? 0);
   properties1 = setBit(properties1, 7, shape.lineBreakHangul === 1);
   properties1 = setBit(properties1, 8, shape.snapToGrid);
+  if (shape.condense !== undefined) {
+    const condense = shape.condense;
+    if (!Number.isInteger(condense) || condense < 25 || condense > 100)
+      throw new RangeError(`공백 최소값 ${condense}%는 25~100% 정수여야 한다.`);
+    properties1 = setBits(properties1, 9, 15, 100 - condense);
+  }
   properties1 = setBit(properties1, 16, shape.widowOrphan);
   properties1 = setBit(properties1, 17, shape.keepWithNext);
   properties1 = setBit(properties1, 18, shape.keepLines);

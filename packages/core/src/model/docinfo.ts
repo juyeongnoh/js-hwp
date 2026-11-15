@@ -536,7 +536,10 @@ export interface ParaShape {
   widowOrphan?: boolean;
   /** 텍스트를 문서 격자에 맞춘다. */
   snapToGrid?: boolean;
-  /** 조금 긴 마지막 줄을 앞 줄로 밀어 넣는다. */
+  /**
+   * 공백 최소값(%). 한글 대화상자 값 25~100이다. 없으면 100.
+   * 파일에는 100에서 뺀 값으로 저장된다(정오표 E21).
+   */
   condense?: number;
   verticalAlign?: VerticalAlign;
   /** 계산된 줄 높이 대신 글꼴 자체의 줄 높이를 쓴다. */
