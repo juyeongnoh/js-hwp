@@ -751,6 +751,7 @@ function readStyle(reader: ByteReader): Style {
   const langId = reader.optionalInt16(1042);
   const paraShapeId = reader.optionalUint16();
   const charShapeId = reader.optionalUint16();
+  const trailing = reader.rest();
   // 스타일 종류는 0·1만 안다. 다른 값(kogl 파일의 4 등)은 bit 0~2째 보존한다.
   const kind = bits(properties, 0, 2);
   const unknownBits = properties & ~(kind <= 1 ? STYLE_KIND : 0);
@@ -764,6 +765,7 @@ function readStyle(reader: ByteReader): Style {
     nextStyleId,
     langId,
     ...(unknownBits && { unknownBits }),
+    trailing,
   };
 }
 
@@ -1252,6 +1254,8 @@ function writeStyle(style: Style): ByteWriter {
   writer.int16(style.langId ?? 1042);
   writer.uint16(style.paraShapeId);
   writer.uint16(style.charShapeId);
-  writer.uint16(0); // unknown trailing field, always zero in files Hangul writes
+  // 정오표 정정 49. 새 스타일은 한글처럼 0 두 바이트.
+  if (style.trailing) writer.bytes(style.trailing);
+  else writer.uint16(0);
   return writer;
 }
