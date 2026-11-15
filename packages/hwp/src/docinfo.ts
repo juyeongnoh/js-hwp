@@ -668,8 +668,13 @@ function readParaShape(
     fontLineHeight: bit(properties1, 22),
     autoSpaceLatin: bit(properties2, 4),
     autoSpaceNumber: bit(properties2, 5),
-    singleLine: bit(properties2, 0),
   };
+
+  // 한 줄로 입력 여부는 명세대로 bit 0-1을 읽는다. 한글은 0과 1만 쓴다(정오표 정정 46).
+  // 2·3은 뜻을 몰라 모르는 비트로 보존한다.
+  const singleLine = bits(properties2, 0, 1);
+  const singleLineKnown = singleLine <= 1;
+  if (singleLineKnown) shape.singleLine = singleLine === 1;
 
   // 공백 최소값은 100에서 뺀 값(0~75)이다(정오표 E21). 범위 밖 값은 모르는 비트로 보존한다.
   const condenseStored = bits(properties1, 9, 15);
@@ -710,7 +715,10 @@ function readParaShape(
     (properties1 &
       ~(condenseKnown ? PARA_KNOWN1 | PARA_CONDENSE : PARA_KNOWN1)) >>>
     0;
-  const unknown2 = (properties2 & ~PARA_KNOWN2) >>> 0;
+  const unknown2 =
+    (properties2 &
+      ~(singleLineKnown ? PARA_KNOWN2 | PARA_SINGLE_LINE : PARA_KNOWN2)) >>>
+    0;
   const unknown3 = (properties3 & ~PARA_KNOWN3) >>> 0;
   if (unknown1) shape.unknownBits1 = unknown1;
   if (unknown2) shape.unknownBits2 = unknown2;
@@ -726,8 +734,10 @@ function readParaShape(
 const PARA_KNOWN1 = 0x3fff01ff;
 /** 속성 1 bit 9-15, 공백 최소값. */
 const PARA_CONDENSE = 0xfe00;
-// 속성 2 bit 0(한 줄로 입력), 4-5. 한글은 bit 1을 쓰지 않는다(정오표 정정 46).
-const PARA_KNOWN2 = 0x31;
+/** 속성 2 bit 0-1, 한 줄로 입력 여부. */
+const PARA_SINGLE_LINE = 0x3;
+// 속성 2 bit 4-5.
+const PARA_KNOWN2 = 0x30;
 const PARA_KNOWN3 = 0x1f;
 
 function readStyle(reader: ByteReader): Style {
@@ -1201,7 +1211,8 @@ function writeParaShape(shape: ParaShape): ByteWriter {
   let properties2 = shape.unknownBits2 ?? 0;
   properties2 = setBit(properties2, 4, shape.autoSpaceLatin);
   properties2 = setBit(properties2, 5, shape.autoSpaceNumber);
-  properties2 = setBit(properties2, 0, shape.singleLine);
+  if (shape.singleLine !== undefined)
+    properties2 = setBits(properties2, 0, 1, shape.singleLine ? 1 : 0);
   writer.uint32(properties2);
 
   if (!short) {

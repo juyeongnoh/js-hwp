@@ -547,7 +547,7 @@ export interface ParaShape {
   /** 한글과 라틴 문자 / 숫자 사이의 자동 자간 조절을 끈다. */
   autoSpaceLatin?: boolean;
   autoSpaceNumber?: boolean;
-  /** 한 줄로 입력. */
+  /** 한 줄로 입력. 파일의 속성 2 bit 0~1이 1이면 켬, 0이면 끔이다(정오표 정정 46). */
   singleLine?: boolean;
 
   /**
