@@ -712,7 +712,11 @@ export interface Style {
   nextStyleId: number;
   /** LCID. 예: ko-KR은 1042. */
   langId?: number;
-  lockForm?: boolean;
+  /**
+   * 속성에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. 스타일 종류 칸(bit 0~2)이 0·1이
+   * 아니면 그 값도 여기 있고, 그 칸을 그대로 쓴다(kind는 Paragraph).
+   */
+  unknownBits?: number;
 }
 
 // ---------------------------------------------------------------------------

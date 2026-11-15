@@ -740,6 +740,9 @@ const PARA_SINGLE_LINE = 0x3;
 const PARA_KNOWN2 = 0x30;
 const PARA_KNOWN3 = 0x1f;
 
+/** 스타일 속성 bit 0~2, 스타일 종류(표 48). */
+const STYLE_KIND = 0x7;
+
 function readStyle(reader: ByteReader): Style {
   const name = reader.string();
   const englishName = reader.optionalString();
@@ -748,16 +751,19 @@ function readStyle(reader: ByteReader): Style {
   const langId = reader.optionalInt16(1042);
   const paraShapeId = reader.optionalUint16();
   const charShapeId = reader.optionalUint16();
+  // 스타일 종류는 0·1만 안다. 다른 값(kogl 파일의 4 등)은 bit 0~2째 보존한다.
+  const kind = bits(properties, 0, 2);
+  const unknownBits = properties & ~(kind <= 1 ? STYLE_KIND : 0);
 
   return {
     name,
     englishName,
-    kind: bits(properties, 0, 2) === 1 ? StyleKind.Char : StyleKind.Paragraph,
+    kind: kind === 1 ? StyleKind.Char : StyleKind.Paragraph,
     paraShapeId,
     charShapeId,
     nextStyleId,
     langId,
-    lockForm: bit(properties, 3),
+    ...(unknownBits && { unknownBits }),
   };
 }
 
@@ -1232,9 +1238,14 @@ function writeStyle(style: Style): ByteWriter {
   writer.string(style.name);
   writer.string(style.englishName);
 
-  let properties = 0;
-  properties = setBits(properties, 0, 2, style.kind === StyleKind.Char ? 1 : 0);
-  properties = setBit(properties, 3, style.lockForm);
+  let properties = style.unknownBits ?? 0;
+  if (properties & STYLE_KIND) {
+    if (style.kind === StyleKind.Char) {
+      throw new RangeError(`스타일 종류 칸에 모르는 값 ${properties & STYLE_KIND}이 있어 글자 스타일로 쓸 수 없습니다. unknownBits의 bit 0~2를 지우세요.`);
+    }
+  } else {
+    properties = setBits(properties, 0, 2, style.kind === StyleKind.Char ? 1 : 0);
+  }
   writer.uint8(properties);
 
   writer.uint8(style.nextStyleId);
