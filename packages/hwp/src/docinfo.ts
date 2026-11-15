@@ -1102,12 +1102,16 @@ function checkEnum(value: number, max: number, what: string): number {
 
 function writeParaShape(shape: ParaShape): ByteWriter {
   const writer = new ByteWriter();
-  const short = shape.recordLayout === 46;
+  const kind = checkEnum(shape.lineSpacing.kind, 3, "줄 간격 종류");
+  // 46B 형식에는 최소가 없다. 그 레코드만 한글 5.1 형식(58B)으로 올려 쓴다. 5.0.2.5 파일
+  // 안의 58B 레코드도 한글은 읽는다(정오표 E20). 다른 레코드와 파일 버전은 그대로 둔다.
+  const upgrade = shape.recordLayout === 46 && kind === LineSpacingKind.AtLeast;
+  const layout = upgrade ? undefined : shape.recordLayout;
+  const short = layout === 46;
 
   // 옛 줄 간격 칸(속성 1 bit 0~1, 오프셋 24). 한글은 54·58B에도 쓰고, 옛 칸에 없는 최소는
   // 글자에 따라 100%로 쓴다(정오표 정정 44).
   const { value } = shape.lineSpacing;
-  const kind = checkEnum(shape.lineSpacing.kind, 3, "줄 간격 종류");
   const oldAtLeast = !short && kind === LineSpacingKind.AtLeast;
   let properties1 = shape.unknownBits1 ?? 0;
   properties1 = setBits(
@@ -1153,10 +1157,10 @@ function writeParaShape(shape: ParaShape): ByteWriter {
     checkEnum(shape.headingKind ?? HeadingKind.None, 3, "문단 머리 종류"),
   );
   const level = checkEnum(shape.headingLevel ?? 0, 9, "문단 수준");
-  const hasLevel = shape.recordLayout === undefined;
+  const hasLevel = layout === undefined;
   if (!hasLevel && level > 6)
     throw new RangeError(
-      `문단 수준 ${level + 1}은 ${shape.recordLayout}B 문단 모양에 쓸 수 없다(7수준까지).`,
+      `문단 수준 ${level + 1}은 ${layout}B 문단 모양에 쓸 수 없다(7수준까지).`,
     );
   properties1 = setBits(properties1, 25, 27, Math.min(level, 6));
   properties1 = setBit(properties1, 28, shape.border?.connect);
