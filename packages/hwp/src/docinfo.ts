@@ -640,6 +640,7 @@ function readParaShape(reader: ByteReader): ParaShape {
     fontLineHeight: bit(properties1, 22),
     autoSpaceLatin: bit(properties2, 4),
     autoSpaceNumber: bit(properties2, 5),
+    singleLine: bit(properties2, 0),
   };
 
   // 공백 최소값은 100에서 뺀 값(0~75)이다(정오표 E21). 범위 밖 값은 모르는 비트로 보존한다.
@@ -675,7 +676,8 @@ function readParaShape(reader: ByteReader): ParaShape {
     };
   }
 
-  // 실측에서 켜진 모르는 비트: 속성 2 bit 0·3.
+  // 실측에서 켜진 모르는 비트: 속성 2 bit 3. 속성 1 bit 30(명세의 문단 꼬리 모양)은
+  // 한글에서 바꿀 수 없어 해석하지 않고 보존한다.
   const unknown1 =
     (properties1 &
       ~(condenseKnown ? PARA_KNOWN1 | PARA_CONDENSE : PARA_KNOWN1)) >>>
@@ -696,7 +698,8 @@ function readParaShape(reader: ByteReader): ParaShape {
 const PARA_KNOWN1 = 0x3fff01ff;
 /** 속성 1 bit 9-15, 공백 최소값. */
 const PARA_CONDENSE = 0xfe00;
-const PARA_KNOWN2 = 0x30;
+// 속성 2 bit 0(한 줄로 입력), 4-5. 한글은 bit 1을 쓰지 않는다(정오표 정정 46).
+const PARA_KNOWN2 = 0x31;
 const PARA_KNOWN3 = 0x1f;
 
 function readStyle(reader: ByteReader): Style {
@@ -1142,6 +1145,7 @@ function writeParaShape(shape: ParaShape): ByteWriter {
   let properties2 = shape.unknownBits2 ?? 0;
   properties2 = setBit(properties2, 4, shape.autoSpaceLatin);
   properties2 = setBit(properties2, 5, shape.autoSpaceNumber);
+  properties2 = setBit(properties2, 0, shape.singleLine);
   writer.uint32(properties2);
 
   if (!short) {

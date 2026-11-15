@@ -547,6 +547,8 @@ export interface ParaShape {
   /** 한글과 라틴 문자 / 숫자 사이의 자동 자간 조절을 끈다. */
   autoSpaceLatin?: boolean;
   autoSpaceNumber?: boolean;
+  /** 한 줄로 입력. */
+  singleLine?: boolean;
 
   /**
    * 원본 레코드 형식. 46은 5.0.2.5의 46B(속성 3과 새 줄 간격 없음, 줄 간격 종류는
