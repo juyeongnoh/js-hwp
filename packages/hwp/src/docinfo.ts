@@ -25,6 +25,7 @@ import {
   type GradientFill,
   type ImageFill,
   type FontFace,
+  type DocumentVersion,
   type HwpDocument,
   HeadingKind,
   type Numbering,
@@ -150,7 +151,7 @@ export function parseDocInfo(
         doc.bullets.push(readBullet(reader));
         break;
       case DocInfoTag.ParaShape:
-        doc.paraShapes.push(readParaShape(reader));
+        doc.paraShapes.push(readParaShape(reader, doc.version));
         break;
       case DocInfoTag.Style:
         doc.styles.push(readStyle(reader));
@@ -596,7 +597,17 @@ function readBullet(reader: ByteReader): Bullet {
   return bullet;
 }
 
-function readParaShape(reader: ByteReader): ParaShape {
+/** 버전을 비교할 수 있는 수 하나로 묶는다. 5.1.1.0 → 0x05010100. */
+function versionNumber(v: DocumentVersion): number {
+  return (
+    ((v.major << 24) | (v.minor << 16) | (v.build << 8) | v.revision) >>> 0
+  );
+}
+
+function readParaShape(
+  reader: ByteReader,
+  version: DocumentVersion,
+): ParaShape {
   const properties1 = reader.uint32();
   const marginLeft = reader.int32();
   const marginRight = reader.int32();
@@ -623,9 +634,16 @@ function readParaShape(reader: ByteReader): ParaShape {
   const trailing = reader.rest();
 
   const headingKind = bits(properties1, 23, 24) as HeadingKind;
-  const lineSpacingKind = short
-    ? bits(properties1, 0, 1)
-    : bits(properties3, 0, 4);
+  // 두 줄 간격 칸이 다르면 한글이 읽는 칸을 읽는다(정오표 E20). 5.0.2.5 파일은 새 칸 종류가
+  // 0(글자에 따라)이면 옛 칸을, 5.1.1.0 파일은 늘 새 칸을 읽었다. 그 사이 버전은 확인하지
+  // 않아 5.1.1.0 미만을 5.0.2.5처럼 읽는다. 쓸 때는 두 칸을 짝 맞추므로, 한글이 저장한 것과
+  // 같은 결과가 된다.
+  const newKind = bits(properties3, 0, 4);
+  const useOld =
+    short ||
+    (newKind === LineSpacingKind.Percent &&
+      versionNumber(version) < 0x05010100);
+  const lineSpacingKind = useOld ? bits(properties1, 0, 1) : newKind;
 
   const shape: ParaShape = {
     align: bits(properties1, 2, 4) as Align,
@@ -635,8 +653,8 @@ function readParaShape(reader: ByteReader): ParaShape {
     marginTop,
     marginBottom,
     lineSpacing: {
-      kind: (lineSpacingKind as LineSpacingKind) ?? LineSpacingKind.Percent,
-      value: lineSpacingNew || lineSpacingOld,
+      kind: lineSpacingKind as LineSpacingKind,
+      value: useOld ? lineSpacingOld : lineSpacingNew,
     },
     tabDefId,
     lineBreakLatin: bits(properties1, 5, 6),
