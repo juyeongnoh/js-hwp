@@ -336,3 +336,20 @@ export const setBit = (
   value: boolean | undefined,
 ): number =>
   value ? (target | (1 << index)) >>> 0 : (target & ~(1 << index)) >>> 0;
+
+/**
+ * DocInfo 표를 가리키는 참조(번호·글머리표·테두리/배경)는 1부터 세고 0은 참조 없음이다.
+ * 모델은 0부터 센 인덱스를 쓰고, 참조 없음은 undefined다(0은 첫 항목이라 쓸 수 없다).
+ * 실제 파일 154개에서 이 참조는 표 길이를 넘지 않았고, 표 길이와 같은 값이 있었다
+ * (문단 모양 번호·글머리표 36개, 테두리 649개, 글자 모양 229개).
+ */
+export function fromIdRef(ref: number): number | undefined {
+  return ref === 0 ? undefined : ref - 1;
+}
+
+export function toIdRef(id: number | undefined, what: string): number {
+  if (id === undefined) return 0;
+  if (!Number.isInteger(id) || id < 0 || id > 0xfffe)
+    throw new RangeError(`${what} ${id}는 0~65534 정수여야 한다.`);
+  return id + 1;
+}

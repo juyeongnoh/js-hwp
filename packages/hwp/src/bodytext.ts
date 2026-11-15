@@ -31,7 +31,7 @@ import {
   defaultPageDef,
   rgb,
 } from '@js-hwp/core'
-import { ByteReader, ByteWriter, bit, bits, setBit, setBits } from './bytes.js'
+import { ByteReader, ByteWriter, bit, bits, setBit, setBits, fromIdRef, toIdRef } from './bytes.js'
 import { type RecordNode, RecordWriter, buildRecordTree, childWithTag, parseRecords } from './record.js'
 import { CtrlId, SectionTag } from './tags.js'
 
@@ -460,7 +460,7 @@ function readTable(node: RecordNode, reader: ByteReader, context: ParseContext):
   let colCount = 0
   let cellSpacing = 0
   let margins = { left: 0, right: 0, top: 0, bottom: 0 }
-  let borderFillId = 0
+  let borderFillRef = 0
   let pageBreak = 0
   let repeatHeaderRows = 0
 
@@ -477,7 +477,7 @@ function readTable(node: RecordNode, reader: ByteReader, context: ParseContext):
       bottom: t.hwpUnit16(),
     }
     for (let i = 0; i < rowCount && t.hasMore(2); i++) rowSizes.push(t.uint16())
-    borderFillId = t.optionalUint16()
+    borderFillRef = t.optionalUint16()
     pageBreak = bits(properties, 0, 1)
     repeatHeaderRows = bit(properties, 2) ? 1 : 0
   }
@@ -505,10 +505,15 @@ function readTable(node: RecordNode, reader: ByteReader, context: ParseContext):
     rows: rows.filter((row) => row.cells.length > 0),
     cellMargins: margins,
     cellSpacing,
-    borderFillId,
+    ...idRefField(borderFillRef),
     pageBreak,
     repeatHeaderRows,
   }
+}
+
+function idRefField(ref: number): { borderFillId?: number } {
+  const id = fromIdRef(ref)
+  return id === undefined ? {} : { borderFillId: id }
 }
 
 function readTableCell(node: RecordNode, context: ParseContext): TableCell {
@@ -529,7 +534,7 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
     top: reader.optionalUint16(),
     bottom: reader.optionalUint16(),
   }
-  const borderFillId = reader.optionalUint16()
+  const borderFillRef = reader.optionalUint16()
 
   return {
     col,
@@ -539,7 +544,7 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
     width,
     height,
     margins,
-    borderFillId: Math.max(0, borderFillId - 1),
+    ...idRefField(borderFillRef),
     // 파일의 값은 0=위, 1=가운데, 2=아래다. 모델의 VerticalAlign은 셀이 가질
     // 수 없는 Baseline에서 시작하므로 하나 밀어준다.
     verticalAlign: (CELL_VERTICAL_ALIGN_FROM_WIRE[bits(properties, 5, 6)] ??
@@ -1103,7 +1108,7 @@ function writeTable(
     body.hwpUnit16(table.cellMargins.top)
     body.hwpUnit16(table.cellMargins.bottom)
     for (const row of table.rows) body.uint16(row.cells.length)
-    body.uint16((table.borderFillId ?? 0) + 1)
+    body.uint16(toIdRef(table.borderFillId, '표 테두리 ID'))
     body.uint16(0) // valid zone count
 
     writer.write(SectionTag.Table, body)
@@ -1133,7 +1138,7 @@ function writeTableCell(writer: RecordWriter, doc: HwpDocument, cell: TableCell)
   header.uint16(cell.margins?.right ?? 0)
   header.uint16(cell.margins?.top ?? 0)
   header.uint16(cell.margins?.bottom ?? 0)
-  header.uint16((cell.borderFillId ?? 0) + 1)
+  header.uint16(toIdRef(cell.borderFillId, '셀 테두리 ID'))
   header.uint32(cell.width).bytes(new Uint8Array(9))
 
   writer.write(SectionTag.ListHeader, header)

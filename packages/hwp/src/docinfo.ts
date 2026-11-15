@@ -42,7 +42,16 @@ import {
   type Rgb,
   rgb,
 } from "@js-hwp/core";
-import { ByteReader, ByteWriter, bit, bits, setBit, setBits } from "./bytes.js";
+import {
+  ByteReader,
+  ByteWriter,
+  bit,
+  bits,
+  setBit,
+  setBits,
+  fromIdRef,
+  toIdRef,
+} from "./bytes.js";
 import { type HwpRecord, RecordWriter, parseRecords } from "./record.js";
 
 const BLACK = rgb(0, 0, 0);
@@ -434,7 +443,7 @@ function readCharShape(reader: ByteReader): CharShape {
   const underlineColor = reader.color();
   const shadeColor = reader.color();
   const shadowColor = reader.color();
-  const borderFillId = reader.optionalUint16(); // HWP 바이너리 안에는 1-indexed로 저장되어 있다. 파싱 처리 시 유의할 것.
+  const borderFillRef = reader.optionalUint16();
   const strikeoutColor = reader.optionalColor();
 
   const shape: CharShape = {
@@ -446,7 +455,6 @@ function readCharShape(reader: ByteReader): CharShape {
     height,
     textColor,
     shadeColor,
-    borderFillId,
     outline: bits(properties, 8, 10),
     emphasis: bits(properties, 21, 24),
     underline: {
@@ -487,6 +495,8 @@ function readCharShape(reader: ByteReader): CharShape {
   if (bit(properties, 25)) shape.useFontSpace = true;
   if (bit(properties, 30)) shape.useKerning = true;
 
+  const borderFillId = fromIdRef(borderFillRef);
+  if (borderFillId !== undefined) shape.borderFillId = borderFillId;
   return shape;
 }
 
@@ -652,8 +662,8 @@ function readParaShape(reader: ByteReader): ParaShape {
   // 머리 종류가 없어도 0이 아닌 id·수준은 보존한다. 테두리도 같다.
   // 샘플 2427개에는 그런 레코드가 없었다.
   if (headingKind !== HeadingKind.None) shape.headingKind = headingKind;
-  if (headingKind !== HeadingKind.None || numberingBulletId !== 0)
-    shape.headingId = numberingBulletId;
+  const headingId = fromIdRef(numberingBulletId);
+  if (headingId !== undefined) shape.headingId = headingId;
   if (headingKind !== HeadingKind.None || headingLevel !== 0)
     shape.headingLevel = headingLevel;
 
@@ -666,7 +676,7 @@ function readParaShape(reader: ByteReader): ParaShape {
     bits(properties1, 28, 29) !== 0
   ) {
     shape.border = {
-      borderFillId,
+      ...(borderFillId !== 0 && { borderFillId: borderFillId - 1 }),
       offsetLeft: borderOffsetLeft,
       offsetRight: borderOffsetRight,
       offsetTop: borderOffsetTop,
@@ -976,7 +986,7 @@ function writeCharShape(shape: CharShape): ByteWriter {
   writer.color(shape.underline.color);
   writer.color(shape.shadeColor);
   writer.color(shape.shadow.color);
-  writer.uint16(shape.borderFillId ?? 0);
+  writer.uint16(toIdRef(shape.borderFillId, "글자 테두리 ID"));
   writer.color(shape.strikeout.color);
 
   return writer;
@@ -1135,8 +1145,8 @@ function writeParaShape(shape: ParaShape): ByteWriter {
   writer.int32(shape.marginBottom);
   writer.int32(oldAtLeast ? 100 : value);
   writer.uint16(shape.tabDefId ?? 0);
-  writer.uint16(shape.headingId ?? 0);
-  writer.uint16(shape.border?.borderFillId ?? 0);
+  writer.uint16(toIdRef(shape.headingId, "문단 머리 ID"));
+  writer.uint16(toIdRef(shape.border?.borderFillId, "문단 테두리 ID"));
   writer.int16(shape.border?.offsetLeft ?? 0);
   writer.int16(shape.border?.offsetRight ?? 0);
   writer.int16(shape.border?.offsetTop ?? 0);

@@ -488,8 +488,8 @@ export enum HeadingKind {
 }
 
 export interface ParagraphBorder {
-  /** {@link HwpDocument.borderFills}의 인덱스. */
-  borderFillId: number;
+  /** {@link HwpDocument.borderFills}의 인덱스. 없으면 참조하지 않는다. */
+  borderFillId?: number;
   offsetLeft: HwpUnit;
   offsetRight: HwpUnit;
   offsetTop: HwpUnit;
@@ -518,8 +518,8 @@ export interface ParaShape {
 
   /** {@link HwpDocument.tabDefs}의 인덱스. */
   tabDefId?: number;
-  /** {@link headingKind}에 따라 번호 매기기 또는 글머리표의 인덱스. */
   headingKind?: HeadingKind;
+  /** {@link headingKind}에 따라 {@link HwpDocument.numberings} 또는 {@link HwpDocument.bullets}의 인덱스. */
   headingId?: number;
   /** 0부터 센 문단 수준. 한글은 0~9(1~10수준)를 쓴다. */
   headingLevel?: number;
