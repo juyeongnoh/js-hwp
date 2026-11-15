@@ -461,11 +461,11 @@ export enum VerticalAlign {
 export enum LineSpacingKind {
   /** 줄의 자연 높이에 대한 퍼센트 (HWP 기본값. 보통 160). */
   Percent = 0,
-  /** HWPUNIT 고정 높이. */
+  /** 고정 높이. */
   Fixed = 1,
   /** 자연 높이에 고정값을 더한 것. */
   BetweenLines = 2,
-  /** 퍼센트. 줄 상자가 아니라 글꼴의 em 상자를 기준으로 잰다. */
+  /** 최소 높이. 5.0.2.5 미만용 옛 칸에는 없어서 한글은 옛 칸에 Percent 100을 쓴다(정오표 E20). */
   AtLeast = 3,
 }
 
@@ -510,7 +510,7 @@ export interface ParaShape {
   /** 문단 간격 위. */
   marginTop: HalfHwpUnit;
   marginBottom: HalfHwpUnit;
-  /** 줄바꿈 (%) */
+  /** 줄 간격. 값은 Percent면 %, 나머지는 {@link HalfHwpUnit}이다(정오표 E20). */
   lineSpacing: { kind: LineSpacingKind; value: number };
 
   lineBreakLatin?: LineBreakLatin;

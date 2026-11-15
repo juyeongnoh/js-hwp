@@ -226,7 +226,7 @@ export function applyParagraphStyle(base: ParaShape, style: ParagraphStyle): Par
     shape.lineSpacing = { kind: LineSpacingKind.Percent, value: style.lineHeight }
   }
   if (style.lineHeightFixed !== undefined) {
-    shape.lineSpacing = { kind: LineSpacingKind.Fixed, value: length(style.lineHeightFixed)! }
+    shape.lineSpacing = { kind: LineSpacingKind.Fixed, value: toHalfHwpUnit(length(style.lineHeightFixed)!) }
   }
 
   const before = length(style.spaceBefore)

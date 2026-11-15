@@ -684,8 +684,8 @@ function readParaShape(reader: ByteReader): ParaShape {
   return shape;
 }
 
-// 문단 모양 속성 1 bit 2-8, 16-29. bit 0-1(옛 줄 간격 종류)은 46B 레코드에서만 쓴다.
-const PARA_KNOWN1 = 0x3fff01fc;
+// 문단 모양 속성 1 bit 0-8, 16-29. bit 0-1(옛 줄 간격 종류)은 새 줄 간격에서 정한다.
+const PARA_KNOWN1 = 0x3fff01ff;
 const PARA_KNOWN2 = 0x30;
 const PARA_KNOWN3 = 0x1f;
 
@@ -1071,8 +1071,17 @@ function writeParaShape(shape: ParaShape): ByteWriter {
   const writer = new ByteWriter();
   const short = shape.recordLayout === 46;
 
+  // 옛 줄 간격 칸(속성 1 bit 0~1, 오프셋 24). 한글은 54·58B에도 쓰고, 옛 칸에 없는 최소는
+  // 글자에 따라 100%로 쓴다(정오표 정정 44).
+  const { kind, value } = shape.lineSpacing;
+  const oldAtLeast = !short && kind === LineSpacingKind.AtLeast;
   let properties1 = shape.unknownBits1 ?? 0;
-  if (short) properties1 = setBits(properties1, 0, 1, shape.lineSpacing.kind);
+  properties1 = setBits(
+    properties1,
+    0,
+    1,
+    oldAtLeast ? LineSpacingKind.Percent : kind,
+  );
   properties1 = setBits(properties1, 2, 4, shape.align);
   properties1 = setBits(properties1, 5, 6, shape.lineBreakLatin ?? 0);
   properties1 = setBit(properties1, 7, shape.lineBreakHangul === 1);
@@ -1105,7 +1114,7 @@ function writeParaShape(shape: ParaShape): ByteWriter {
   writer.int32(shape.indent);
   writer.int32(shape.marginTop);
   writer.int32(shape.marginBottom);
-  writer.int32(shape.lineSpacing.value);
+  writer.int32(oldAtLeast ? 100 : value);
   writer.uint16(shape.tabDefId ?? 0);
   writer.uint16(shape.headingId ?? 0);
   writer.uint16(shape.border?.borderFillId ?? 0);
