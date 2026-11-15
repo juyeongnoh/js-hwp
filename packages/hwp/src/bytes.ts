@@ -202,6 +202,12 @@ export class ByteReader {
   }
 }
 
+/** 정수형에 담기지 않는 값을 잘라 쓰지 않고 거부한다. */
+function checkInt(value: number, min: number, max: number, type: string): void {
+  if (!Number.isInteger(value) || value < min || value > max)
+    throw new RangeError(`${value}는 ${type}(${min}~${max})에 담을 수 없다.`);
+}
+
 export class ByteWriter {
   #chunks: Uint8Array[] = [];
   #buffer = new Uint8Array(1024);
@@ -219,28 +225,33 @@ export class ByteWriter {
   }
 
   uint8(value: number): this {
+    checkInt(value, 0, 0xff, "UINT8");
     this.#ensure(1);
-    this.#buffer[this.#length++] = value & 0xff;
+    this.#buffer[this.#length++] = value;
     return this;
   }
 
   int8(value: number): this {
+    checkInt(value, -0x80, 0x7f, "INT8");
     return this.uint8(value < 0 ? value + 0x100 : value);
   }
 
   uint16(value: number): this {
+    checkInt(value, 0, 0xffff, "UINT16");
     this.#ensure(2);
-    const v = value & 0xffff;
+    const v = value;
     this.#buffer[this.#length++] = v & 0xff;
     this.#buffer[this.#length++] = (v >>> 8) & 0xff;
     return this;
   }
 
   int16(value: number): this {
+    checkInt(value, -0x8000, 0x7fff, "INT16");
     return this.uint16(value < 0 ? value + 0x10000 : value);
   }
 
   uint32(value: number): this {
+    checkInt(value, 0, 0xffffffff, "UINT32");
     this.#ensure(4);
     const v = value >>> 0;
     this.#buffer[this.#length++] = v & 0xff;
@@ -251,6 +262,7 @@ export class ByteWriter {
   }
 
   int32(value: number): this {
+    checkInt(value, -0x80000000, 0x7fffffff, "INT32");
     return this.uint32(value < 0 ? value + 0x100000000 : value);
   }
 

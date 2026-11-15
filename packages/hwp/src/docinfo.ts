@@ -1090,13 +1090,24 @@ function writeBullet(bullet: Bullet): ByteWriter {
   return writer;
 }
 
+/**
+ * 열거형 칸 값이 0~max 정수인지 검사한다. max는 명세 범위이고, 실제 파일 154개의
+ * 문단 모양 6,727개도 모두 이 안이었다.
+ */
+function checkEnum(value: number, max: number, what: string): number {
+  if (!Number.isInteger(value) || value < 0 || value > max)
+    throw new RangeError(`${what} ${value}는 0~${max} 정수여야 한다.`);
+  return value;
+}
+
 function writeParaShape(shape: ParaShape): ByteWriter {
   const writer = new ByteWriter();
   const short = shape.recordLayout === 46;
 
   // 옛 줄 간격 칸(속성 1 bit 0~1, 오프셋 24). 한글은 54·58B에도 쓰고, 옛 칸에 없는 최소는
   // 글자에 따라 100%로 쓴다(정오표 정정 44).
-  const { kind, value } = shape.lineSpacing;
+  const { value } = shape.lineSpacing;
+  const kind = checkEnum(shape.lineSpacing.kind, 3, "줄 간격 종류");
   const oldAtLeast = !short && kind === LineSpacingKind.AtLeast;
   let properties1 = shape.unknownBits1 ?? 0;
   properties1 = setBits(
@@ -1105,9 +1116,18 @@ function writeParaShape(shape: ParaShape): ByteWriter {
     1,
     oldAtLeast ? LineSpacingKind.Percent : kind,
   );
-  properties1 = setBits(properties1, 2, 4, shape.align);
-  properties1 = setBits(properties1, 5, 6, shape.lineBreakLatin ?? 0);
-  properties1 = setBit(properties1, 7, shape.lineBreakHangul === 1);
+  properties1 = setBits(properties1, 2, 4, checkEnum(shape.align, 5, "정렬"));
+  properties1 = setBits(
+    properties1,
+    5,
+    6,
+    checkEnum(shape.lineBreakLatin ?? 0, 2, "라틴 줄 나눔"),
+  );
+  properties1 = setBit(
+    properties1,
+    7,
+    checkEnum(shape.lineBreakHangul ?? 0, 1, "한글 줄 나눔") === 1,
+  );
   properties1 = setBit(properties1, 8, shape.snapToGrid);
   if (shape.condense !== undefined) {
     const condense = shape.condense;
@@ -1119,15 +1139,20 @@ function writeParaShape(shape: ParaShape): ByteWriter {
   properties1 = setBit(properties1, 17, shape.keepWithNext);
   properties1 = setBit(properties1, 18, shape.keepLines);
   properties1 = setBit(properties1, 19, shape.pageBreakBefore);
-  properties1 = setBits(properties1, 20, 21, shape.verticalAlign ?? 0);
+  properties1 = setBits(
+    properties1,
+    20,
+    21,
+    checkEnum(shape.verticalAlign ?? 0, 3, "세로 정렬"),
+  );
   properties1 = setBit(properties1, 22, shape.fontLineHeight);
   properties1 = setBits(
     properties1,
     23,
     24,
-    shape.headingKind ?? HeadingKind.None,
+    checkEnum(shape.headingKind ?? HeadingKind.None, 3, "문단 머리 종류"),
   );
-  const level = shape.headingLevel ?? 0;
+  const level = checkEnum(shape.headingLevel ?? 0, 9, "문단 수준");
   const hasLevel = shape.recordLayout === undefined;
   if (!hasLevel && level > 6)
     throw new RangeError(
@@ -1160,7 +1185,7 @@ function writeParaShape(shape: ParaShape): ByteWriter {
 
   if (!short) {
     let properties3 = shape.unknownBits3 ?? 0;
-    properties3 = setBits(properties3, 0, 4, shape.lineSpacing.kind);
+    properties3 = setBits(properties3, 0, 4, kind);
     writer.uint32(properties3);
     writer.uint32(shape.lineSpacing.value);
   }
