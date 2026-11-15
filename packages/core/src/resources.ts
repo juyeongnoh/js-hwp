@@ -15,7 +15,7 @@ import { defaultCharShape, defaultParaShape } from './defaults.js'
 import type {
   BorderFill,
   CharShape,
-  FontFace,
+  Lang,
   Numbering,
   ParaShape,
   Style,
@@ -90,14 +90,13 @@ export class Resources {
     return id
   }
 
-  /** 이름으로 글꼴을 찾고, 새것이면 표에 추가한다. */
-  font(name: string): number {
-    const existing = this.#doc.fonts.findIndex((f) => f.name === name)
+  /** `lang` 글꼴 목록에서 이름으로 글꼴을 찾고, 새것이면 그 목록에 추가한다. */
+  font(name: string, lang: Lang): number {
+    const fonts = this.#doc.fonts[lang]
+    const existing = fonts.findIndex((f) => f.name === name)
     if (existing !== -1) return existing
-    const face: FontFace = { name }
-    this.#doc.fonts.push(face)
-    this.#index('fonts', this.#doc.fonts).set(canonicalKey(face), this.#doc.fonts.length - 1)
-    return this.#doc.fonts.length - 1
+    fonts.push({ name })
+    return fonts.length - 1
   }
 
   charShape(shape: CharShape): number {

@@ -22,6 +22,7 @@ import type {
   Bullet,
   CharShape,
   FontFace,
+  PerLang,
   Numbering,
   ParaShape,
   Style,
@@ -111,7 +112,8 @@ export interface HwpDocument {
   meta: DocumentMeta;
   properties: DocumentProperties;
 
-  fonts: FontFace[];
+  /** 언어별 글꼴 목록. 글자 모양의 `fontIds[언어]`는 `fonts[언어]`의 인덱스다. */
+  fonts: PerLang<FontFace[]>;
   charShapes: CharShape[];
   paraShapes: ParaShape[];
   borderFills: BorderFill[];

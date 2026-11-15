@@ -28,6 +28,7 @@ import {
   StyleKind,
   type TabDef,
   perLang,
+  type PerLang,
 } from "./model/docinfo.js";
 import {
   DEFAULT_DOCUMENT_PROPERTIES,
@@ -195,7 +196,7 @@ export function createDocument(
     version: { ...DEFAULT_VERSION },
     meta: {},
     properties: { ...DEFAULT_DOCUMENT_PROPERTIES },
-    fonts: DEFAULT_FONTS.map((f) => ({ ...f })),
+    fonts: perLang(null).map(() => DEFAULT_FONTS.map((f) => ({ ...f }))) as PerLang<FontFace[]>,
     charShapes: [defaultCharShape()],
     paraShapes: [defaultParaShape()],
     borderFills: DEFAULT_BORDER_FILLS.map((b) => ({ ...b })),

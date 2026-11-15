@@ -121,12 +121,14 @@ export function applyTextStyle(base: CharShape, style: TextStyle, resources: Res
   }
 
   if (style.font !== undefined) {
-    shape.fontIds = fillPerLang(shape.fontIds, resources.font(style.font))
+    const font = style.font
+    shape.fontIds = shape.fontIds.map((_, lang) => resources.font(font, lang)) as PerLang<number>
   }
   if (style.fonts) {
     for (const [name, family] of Object.entries(style.fonts)) {
       if (family === undefined) continue
-      shape.fontIds[LANG_INDEX[name as keyof typeof LANG_INDEX]] = resources.font(family)
+      const lang = LANG_INDEX[name as keyof typeof LANG_INDEX]
+      shape.fontIds[lang] = resources.font(family, lang)
     }
   }
   if (style.size !== undefined) {

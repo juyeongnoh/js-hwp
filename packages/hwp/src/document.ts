@@ -154,7 +154,7 @@ export function parseHwp(
   const compressed = fileHeader.flags.compressed;
   const doc = createDocument({
     version: fileHeader.version,
-    fonts: [],
+    fonts: [[], [], [], [], [], [], []],
     charShapes: [],
     paraShapes: [],
     borderFills: [],

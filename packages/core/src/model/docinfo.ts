@@ -84,6 +84,13 @@ export interface FontFace {
   typeInfo?: TypeInfo;
   /** "기본 글꼴" 메커니즘을 위한 기본 글꼴 이름. */
   baseFont?: string;
+  /**
+   * 속성에서 모델이 해석하지 않는 비트(bit 0~4). 쓸 때 OR로 합친다. bit 5~7은 뒤따르는
+   * 필드가 있는지를 뜻하므로 여기 두지 않고 필드 유무로 정한다.
+   */
+  unknownBits?: number;
+  /** 알려진 필드 뒤의 바이트. 쓸 때 끝에 그대로 붙인다. */
+  trailing?: Uint8Array;
 }
 
 // ---------------------------------------------------------------------------
@@ -400,7 +407,7 @@ export enum EmphasisMark {
  * 참조한다.
  */
 export interface CharShape {
-  /** 언어별 글꼴 인덱스. {@link HwpDocument.fonts}를 가리킨다. */
+  /** 언어별 글꼴 인덱스. `fontIds[언어]`는 {@link HwpDocument.fonts}`[언어]`를 가리킨다. */
   fontIds: PerLang<number>;
   /** 장평, 퍼센트 (50-200). */
   ratios: PerLang<number>;

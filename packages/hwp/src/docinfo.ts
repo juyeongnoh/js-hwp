@@ -162,7 +162,7 @@ export function parseDocInfo(
     }
   }
 
-  doc.fonts = flattenFonts(faceNames, counts);
+  doc.fonts = splitFonts(faceNames, counts);
 
   doc.preserved ??= {};
   doc.preserved.docInfoTail = unhandled.map((record) => ({
@@ -175,42 +175,18 @@ export function parseDocInfo(
 }
 
 /**
- * 문자 체계별 글꼴 묶음 일곱 개를 표 하나로 접는다.
- *
- * 한글 묶음이 기준 순서를 정한다. 글자 모양이 압도적으로 그걸 참조하기
- * 때문이다. 다른 문자 체계 묶음에만 나오는 글꼴은 뒤에 덧붙인다.
+ * FACE_NAME 레코드를 ID_MAPPINGS의 언어별 개수대로 일곱 묶음으로 나눈다.
+ * 글자 모양의 `fontIds[언어]`는 그 언어 묶음 안의 인덱스다.
  */
-function flattenFonts(
+function splitFonts(
   faceNames: FontFace[],
   counts: IdMappingCounts,
-): FontFace[] {
-  const total = FONT_SLOTS.reduce((sum, slot) => sum + counts[slot], 0);
-  if (total === 0 || total > faceNames.length) return dedupeByName(faceNames);
-
+): PerLang<FontFace[]> {
   let offset = 0;
-  const runs: FontFace[][] = [];
-  for (const slot of FONT_SLOTS) {
-    runs.push(faceNames.slice(offset, offset + counts[slot]));
-    offset += counts[slot];
-  }
-
-  const out: FontFace[] = [];
-  const seen = new Set<string>();
-  for (const run of runs) {
-    for (const font of run) {
-      if (seen.has(font.name)) continue;
-      seen.add(font.name);
-      out.push(font);
-    }
-  }
-  return out.length > 0 ? out : dedupeByName(faceNames);
-}
-
-function dedupeByName(fonts: FontFace[]): FontFace[] {
-  const seen = new Set<string>();
-  return fonts.filter((font) =>
-    seen.has(font.name) ? false : (seen.add(font.name), true),
-  );
+  // ponytail: 개수 합이 레코드 수보다 적으면 남는 FACE_NAME은 버린다. 그런 파일이 나오면 보존 방법을 정한다.
+  return FONT_SLOTS.map((slot) =>
+    faceNames.slice(offset, (offset += counts[slot])),
+  ) as PerLang<FontFace[]>;
 }
 
 function readDocumentProperties(doc: HwpDocument, reader: ByteReader): void {
@@ -268,6 +244,9 @@ function readBinData(reader: ByteReader): BinDataItem {
   return item;
 }
 
+/** FACE_NAME 속성에서 뒤따르는 필드가 있는지 뜻하는 bit 5~7. */
+const FACE_NAME_PRESENCE = 0xe0;
+
 function readFaceName(reader: ByteReader): FontFace {
   const properties = reader.uint8();
   const name = reader.string();
@@ -297,6 +276,11 @@ function readFaceName(reader: ByteReader): FontFace {
   }
   // 기본 글꼴 존재 여부 (0x20).
   if (bit(properties, 5)) face.baseFont = reader.optionalString();
+
+  const unknownBits = properties & ~FACE_NAME_PRESENCE;
+  if (unknownBits) face.unknownBits = unknownBits;
+  const trailing = reader.rest();
+  if (trailing.length > 0) face.trailing = trailing;
 
   return face;
 }
@@ -783,12 +767,9 @@ export function serializeDocInfo(doc: HwpDocument): Uint8Array {
       writer.write(DocInfoTag.BinData, writeBinData(item, index));
     });
 
-    // 모든 문자 체계가 같은 글꼴 목록을 받으므로, 어느 언어 슬롯이 참조하든 글꼴
-    // id는 같은 글꼴을 뜻한다.
-    for (let slot = 0; slot < 7; slot++) {
-      for (const font of doc.fonts)
+    for (const fonts of doc.fonts)
+      for (const font of fonts)
         writer.write(DocInfoTag.FaceName, writeFaceName(font));
-    }
 
     for (const fill of doc.borderFills)
       writer.write(DocInfoTag.BorderFill, writeBorderFill(fill));
@@ -833,13 +814,13 @@ function writeIdMappings(doc: HwpDocument): ByteWriter {
   const counts: IdMappingCounts = {
     ...emptyCounts(),
     binData: doc.binData.length,
-    fontHangul: doc.fonts.length,
-    fontLatin: doc.fonts.length,
-    fontHanja: doc.fonts.length,
-    fontJapanese: doc.fonts.length,
-    fontOther: doc.fonts.length,
-    fontSymbol: doc.fonts.length,
-    fontUser: doc.fonts.length,
+    fontHangul: doc.fonts[0].length,
+    fontLatin: doc.fonts[1].length,
+    fontHanja: doc.fonts[2].length,
+    fontJapanese: doc.fonts[3].length,
+    fontOther: doc.fonts[4].length,
+    fontSymbol: doc.fonts[5].length,
+    fontUser: doc.fonts[6].length,
     borderFill: doc.borderFills.length,
     charShape: doc.charShapes.length,
     tabDef: doc.tabDefs.length,
@@ -883,10 +864,10 @@ function writeBinData(item: BinDataItem, index: number): ByteWriter {
 
 function writeFaceName(font: FontFace): ByteWriter {
   const writer = new ByteWriter();
-  let properties = 0;
+  let properties = (font.unknownBits ?? 0) & ~FACE_NAME_PRESENCE;
   properties = setBit(properties, 7, Boolean(font.substituteFont));
   properties = setBit(properties, 6, Boolean(font.typeInfo));
-  properties = setBit(properties, 5, Boolean(font.baseFont));
+  properties = setBit(properties, 5, font.baseFont !== undefined);
 
   writer.uint8(properties);
   writer.string(font.name);
@@ -909,7 +890,8 @@ function writeFaceName(font: FontFace): ByteWriter {
       .uint8(t.midline)
       .uint8(t.xHeight);
   }
-  if (font.baseFont) writer.string(font.baseFont);
+  if (font.baseFont !== undefined) writer.string(font.baseFont);
+  if (font.trailing) writer.bytes(font.trailing);
 
   return writer;
 }
