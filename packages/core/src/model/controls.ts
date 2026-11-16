@@ -677,6 +677,11 @@ export interface Paragraph {
   pageBreak?: boolean
   /** 이 문단을 다음 단에서 시작한다. */
   columnBreak?: boolean
+  /**
+   * 문단 머리 단 나누기 종류에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다.
+   * 0x01(구역 나누기)은 구역 첫 문단에, 0x02(다단 나누기)는 `cold`를 가진 문단에 붙는다.
+   */
+  divideSortUnknownBits?: number
   /** 앞 문단의 목록 번호를 이어간다. */
   merged?: boolean
   /** 개요 번호 매기기를 위한 명시적 목록 수준 재정의. */

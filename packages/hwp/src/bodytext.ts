@@ -50,6 +50,9 @@ import {
 } from "./record.js";
 import { CtrlId, SectionTag } from "./tags.js";
 
+/** 문단 머리 단 나누기 종류에서 모델이 해석하는 비트: 0x04 쪽, 0x08 단 나누기. */
+const DIVIDE_SORT_KNOWN = 0x0c;
+
 /** 문자 코드로 인덱싱한 제어 문자 형태. */
 export const CONTROL_FORM: readonly ("char" | "inline" | "extended")[] = [
   "char", // 0x00 unusable
@@ -188,9 +191,12 @@ function readParagraph(
 
   const paragraph: Paragraph = { paraShapeId, styleId, runs: [] };
   if (instanceId) paragraph.id = instanceId;
-  // divideSort 비트 2가 쪽 나눔, 비트 1이 단 나눔이다.
+  // 표 59: 0x01 구역, 0x02 다단, 0x04 쪽, 0x08 단 나누기. Windows 한글 13.0에서 네 비트 모두 확인했다.
   if (bit(divideSort, 2)) paragraph.pageBreak = true;
-  if (bit(divideSort, 1)) paragraph.columnBreak = true;
+  if (bit(divideSort, 3)) paragraph.columnBreak = true;
+  const divideSortUnknownBits = divideSort & ~DIVIDE_SORT_KNOWN;
+  if (divideSortUnknownBits)
+    paragraph.divideSortUnknownBits = divideSortUnknownBits;
 
   const textRecord = childWithTag(node, SectionTag.ParaText);
   const charShapeRecord = childWithTag(node, SectionTag.ParaCharShape);
@@ -1006,8 +1012,10 @@ function writeParagraph(
   header.uint16(paragraph.paraShapeId);
   header.uint8(paragraph.styleId);
 
-  let divideSort = 0;
-  divideSort = setBit(divideSort, 1, paragraph.columnBreak);
+  let divideSort = (paragraph.divideSortUnknownBits ?? 0) & ~DIVIDE_SORT_KNOWN;
+  // 구역 첫 문단은 secd·cold를 내보내므로 한글처럼 구역(0x01)·다단(0x02) 나누기를 켠다.
+  if (sectionForDefinition) divideSort |= 0x03;
+  divideSort = setBit(divideSort, 3, paragraph.columnBreak);
   divideSort = setBit(divideSort, 2, paragraph.pageBreak);
   header.uint8(divideSort);
 
