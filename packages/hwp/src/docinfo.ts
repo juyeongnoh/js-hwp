@@ -582,7 +582,7 @@ function readBullet(reader: ByteReader): Bullet {
 }
 
 /** 버전을 비교할 수 있는 수 하나로 묶는다. 5.1.1.0 → 0x05010100. */
-function versionNumber(v: DocumentVersion): number {
+export function versionNumber(v: DocumentVersion): number {
   return (
     ((v.major << 24) | (v.minor << 16) | (v.build << 8) | v.revision) >>> 0
   );

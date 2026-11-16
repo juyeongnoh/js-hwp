@@ -688,4 +688,6 @@ export interface Paragraph {
   listLevel?: number
   /** 왕복에서 보존되는 안정적인 id. */
   id?: number
+  /** 변경 추적 병합 문단 여부(UINT16, 5.0.3.2+). 뜻을 다 알지 못해 값 그대로 둔다. 0이면 생략. */
+  trackChangeMerged?: number
 }

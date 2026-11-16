@@ -48,6 +48,7 @@ import {
   childWithTag,
   parseRecords,
 } from "./record.js";
+import { versionNumber } from "./docinfo.js";
 import { CtrlId, SectionTag } from "./tags.js";
 
 /** 문단 머리 단 나누기 종류에서 모델이 해석하는 비트: 0x04 쪽, 0x08 단 나누기. */
@@ -144,7 +145,8 @@ interface ParseContext {
 
 /** `BodyText/Section{N}` 스트림 하나를 파싱한다. */
 export function parseSection(doc: HwpDocument, data: Uint8Array): Section {
-  const tree = buildRecordTree(parseRecords(data));
+  const records = parseRecords(data);
+  const tree = buildRecordTree(records);
   const context: ParseContext = { doc, fieldStack: [], nextFieldId: 1 };
 
   const section: Section = { pageDef: defaultPageDef(), paragraphs: [] };
@@ -188,9 +190,12 @@ function readParagraph(
   reader.optionalUint16(); // range tag count
   reader.optionalUint16(); // line align count
   const instanceId = reader.optionalUint32();
+  // 5.0.3.2부터 있는 필드. 그 전 버전의 레코드는 22바이트에서 끝난다.
+  const trackChangeMerged = reader.optionalUint16();
 
   const paragraph: Paragraph = { paraShapeId, styleId, runs: [] };
   if (instanceId) paragraph.id = instanceId;
+  if (trackChangeMerged) paragraph.trackChangeMerged = trackChangeMerged;
   // 표 59: 0x01 구역, 0x02 다단, 0x04 쪽, 0x08 단 나누기. Windows 한글 13.0에서 네 비트 모두 확인했다.
   if (bit(divideSort, 2)) paragraph.pageBreak = true;
   if (bit(divideSort, 3)) paragraph.columnBreak = true;
@@ -1023,7 +1028,10 @@ function writeParagraph(
   header.uint16(0); // range tag count
   header.uint16(hasLineSegment ? 1 : 0);
   header.uint32(paragraph.id ?? 0);
-  header.uint16(0); // track-change merge flag (5.0.3.2+)
+  // 5.0.3.2 이전 파일은 이 필드 없이 22바이트로 쓴다. 샘플의 5.0.2.5 파일 15개가 모두 그렇다.
+  if (versionNumber(doc.version) >= 0x05000302) {
+    header.uint16(paragraph.trackChangeMerged ?? 0);
+  }
 
   writer.nested(SectionTag.ParaHeader, header, () => {
     // 빈 문단(PARA_BREAK뿐)은 PARA_TEXT를 생략한다. 한글은 그 레코드가 있으면
