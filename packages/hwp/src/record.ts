@@ -86,9 +86,13 @@ export function serializeRecords(records: HwpRecord[]): Uint8Array {
   const writer = new ByteWriter();
   for (const record of records) {
     if (record.tagId > 0x3ff)
-      throw new HwpFormatError(`태그 ID ${record.tagId}이(가) 10비트 범위를 초과합니다.`);
+      throw new HwpFormatError(
+        `태그 ID ${record.tagId}이(가) 10비트 범위를 초과합니다.`,
+      );
     if (record.level > 0x3ff)
-      throw new HwpFormatError(`중첩 레벨 ${record.level}이(가) 10비트 범위를 초과합니다.`);
+      throw new HwpFormatError(
+        `중첩 레벨 ${record.level}이(가) 10비트 범위를 초과합니다.`,
+      );
 
     const size = record.payload.length;
     const long = size >= SIZE_ESCAPE;
@@ -124,6 +128,7 @@ export function buildRecordTree(records: HwpRecord[]): RecordNode[] {
     }
 
     const parent = stack[stack.length - 1];
+
     if (parent) {
       node.parent = parent;
       parent.children.push(node);
