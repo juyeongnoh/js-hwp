@@ -7,9 +7,16 @@
  * 고정시켜 균일하게 모델링한다.
  */
 
-import type { Rgb } from './color.js'
-import type { BorderLine, Fill, ImageEffect, LineStyle, NumberFormat, VerticalAlign } from './docinfo.js'
-import type { HwpUnit, SHwpUnit } from './units.js'
+import type { Rgb } from "./color.js";
+import type {
+  BorderLine,
+  Fill,
+  ImageEffect,
+  LineStyle,
+  NumberFormat,
+  VerticalAlign,
+} from "./docinfo.js";
+import type { HwpUnit, SHwpUnit } from "./units.js";
 
 // ---------------------------------------------------------------------------
 // 떠 있는 개체의 배치
@@ -78,14 +85,14 @@ export enum CaptionSide {
 }
 
 export interface Caption {
-  side: CaptionSide
+  side: CaptionSide;
   /** 캡션 폭에 개체의 여백을 포함한다. */
-  fullSize?: boolean
-  width: HwpUnit
+  fullSize?: boolean;
+  width: HwpUnit;
   /** 캡션과 개체 사이 간격. */
-  gap: HwpUnit
-  maxWidth?: HwpUnit
-  paragraphs: Paragraph[]
+  gap: HwpUnit;
+  maxWidth?: HwpUnit;
+  paragraphs: Paragraph[];
 }
 
 /**
@@ -94,45 +101,45 @@ export interface Caption {
  */
 export interface ObjectPlacement {
   /** 개체를 큰 글자 하나처럼 줄 안에 배치한다. */
-  treatAsChar?: boolean
+  treatAsChar?: boolean;
   /** {@link treatAsChar}일 때 개체가 줄 높이를 밀어 올리게 한다. */
-  affectLineSpacing?: boolean
+  affectLineSpacing?: boolean;
 
-  vertRelTo: RelativeTo
-  vertAlign?: VertAlign
-  horzRelTo: RelativeTo
-  horzAlign?: HorzAlign
+  vertRelTo: RelativeTo;
+  vertAlign?: VertAlign;
+  horzRelTo: RelativeTo;
+  horzAlign?: HorzAlign;
   /** 개체를 앵커 문단과 같은 쪽에 유지한다. */
-  flowWithText?: boolean
-  allowOverlap?: boolean
+  flowWithText?: boolean;
+  allowOverlap?: boolean;
 
-  offsetX: SHwpUnit
-  offsetY: SHwpUnit
-  width: HwpUnit
-  height: HwpUnit
-  widthCriterion?: WidthCriterion
-  heightCriterion?: HeightCriterion
+  offsetX: SHwpUnit;
+  offsetY: SHwpUnit;
+  width: HwpUnit;
+  height: HwpUnit;
+  widthCriterion?: WidthCriterion;
+  heightCriterion?: HeightCriterion;
 
   /** 떠 있는 개체들 사이의 쌓임 순서. */
-  zOrder?: number
-  textWrap?: TextWrap
-  textFlowSide?: TextFlowSide
+  zOrder?: number;
+  textWrap?: TextWrap;
+  textFlowSide?: TextFlowSide;
 
-  marginLeft?: HwpUnit
-  marginRight?: HwpUnit
-  marginTop?: HwpUnit
-  marginBottom?: HwpUnit
+  marginLeft?: HwpUnit;
+  marginRight?: HwpUnit;
+  marginTop?: HwpUnit;
+  marginBottom?: HwpUnit;
 
   /** 개체가 쪽 경계를 넘어 나뉘도록 허용한다. */
-  allowPageSplit?: boolean
+  allowPageSplit?: boolean;
   /** 편집으로부터 보호한다. */
-  locked?: boolean
+  locked?: boolean;
 
-  caption?: Caption
+  caption?: Caption;
   /** 대체 텍스트 / 설명. 접근성과 HWPX가 쓴다. */
-  description?: string
-  name?: string
-  instanceId?: number
+  description?: string;
+  name?: string;
+  instanceId?: number;
 }
 
 export const DEFAULT_PLACEMENT: ObjectPlacement = {
@@ -143,7 +150,7 @@ export const DEFAULT_PLACEMENT: ObjectPlacement = {
   offsetY: 0,
   width: 0,
   height: 0,
-}
+};
 
 // ---------------------------------------------------------------------------
 // 표
@@ -158,55 +165,55 @@ export enum PageBreakInTable {
 }
 
 export interface CellMargins {
-  left: HwpUnit
-  right: HwpUnit
-  top: HwpUnit
-  bottom: HwpUnit
+  left: HwpUnit;
+  right: HwpUnit;
+  top: HwpUnit;
+  bottom: HwpUnit;
 }
 
 export interface TableCell {
   /** 0부터 시작하는 격자 위치. */
-  col: number
-  row: number
-  colSpan: number
-  rowSpan: number
-  width: HwpUnit
-  height: HwpUnit
-  margins?: CellMargins
+  col: number;
+  row: number;
+  colSpan: number;
+  rowSpan: number;
+  width: HwpUnit;
+  height: HwpUnit;
+  margins?: CellMargins;
   /** {@link HwpDocument.borderFills}의 인덱스. */
-  borderFillId?: number
-  verticalAlign?: VerticalAlign
+  borderFillId?: number;
+  verticalAlign?: VerticalAlign;
   /** 셀에 맞게 텍스트를 줄인다. */
-  shrinkToFit?: boolean
+  shrinkToFit?: boolean;
   /** 셀 안에서 줄바꿈을 막는다. */
-  noWrap?: boolean
+  noWrap?: boolean;
   /** 쪽마다 반복되는 제목 행으로 취급한다. */
-  header?: boolean
+  header?: boolean;
   /** 셀 본문. 셀은 항상 문단을 최소 하나 담는다. */
-  paragraphs: Paragraph[]
+  paragraphs: Paragraph[];
   /** 계산되는 셀일 때의 `=SUM(ABOVE)` 형태 수식. */
-  formula?: string
+  formula?: string;
 }
 
 export interface TableRow {
-  cells: TableCell[]
+  cells: TableCell[];
   /** 명시적 행 높이. 없으면 내용에서 유도한다. */
-  height?: HwpUnit
+  height?: HwpUnit;
 }
 
 export interface TableControl {
-  type: 'table'
-  placement: ObjectPlacement
-  rows: TableRow[]
+  type: "table";
+  placement: ObjectPlacement;
+  rows: TableRow[];
   /** 균일한 안쪽 여백. 셀별로 재정의할 수 있다. */
-  cellMargins: CellMargins
-  cellSpacing?: HwpUnit
-  borderFillId?: number
-  pageBreak?: PageBreakInTable
+  cellMargins: CellMargins;
+  cellSpacing?: HwpUnit;
+  borderFillId?: number;
+  pageBreak?: PageBreakInTable;
   /** 앞의 N개 행을 쪽마다 제목으로 반복한다. */
-  repeatHeaderRows?: number
+  repeatHeaderRows?: number;
   /** 왕복을 위해 기록해두는 자동 맞춤 동작. */
-  noAdjust?: boolean
+  noAdjust?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,132 +221,138 @@ export interface TableControl {
 // ---------------------------------------------------------------------------
 
 export interface Point {
-  x: SHwpUnit
-  y: SHwpUnit
+  x: SHwpUnit;
+  y: SHwpUnit;
 }
 
 export interface ShapeOutline {
-  line: BorderLine
+  line: BorderLine;
   /** 화살촉. HWP 열거 값. */
-  headStyle?: number
-  tailStyle?: number
-  headSize?: number
-  tailSize?: number
+  headStyle?: number;
+  tailStyle?: number;
+  headSize?: number;
+  tailSize?: number;
   /** 둥근 이음. */
-  outlineStyle?: number
-  alpha?: number
+  outlineStyle?: number;
+  alpha?: number;
 }
 
 /** 그리기 개체 안에 그려지는 텍스트. */
 export interface ShapeTextBox {
-  paragraphs: Paragraph[]
-  margins: CellMargins
-  verticalAlign: VerticalAlign
+  paragraphs: Paragraph[];
+  margins: CellMargins;
+  verticalAlign: VerticalAlign;
   /** 도형과 함께 텍스트를 회전한다. */
-  editable?: boolean
+  editable?: boolean;
   /** 텍스트 각도, 1/100도. */
-  textAngle?: number
+  textAngle?: number;
   /** 텍스트에 맞게 도형을 자동으로 키운다. */
-  autoExpand?: boolean
+  autoExpand?: boolean;
 }
 
 interface ShapeBase {
-  placement: ObjectPlacement
-  outline?: ShapeOutline
-  fill?: Fill
-  shadow?: { kind: number; color: Rgb; offsetX: SHwpUnit; offsetY: SHwpUnit; alpha?: number }
+  placement: ObjectPlacement;
+  outline?: ShapeOutline;
+  fill?: Fill;
+  shadow?: {
+    kind: number;
+    color: Rgb;
+    offsetX: SHwpUnit;
+    offsetY: SHwpUnit;
+    alpha?: number;
+  };
   /** 회전, 1/100도, 시계방향. */
-  rotation?: number
-  flipHorizontal?: boolean
-  flipVertical?: boolean
-  textBox?: ShapeTextBox
+  rotation?: number;
+  flipHorizontal?: boolean;
+  flipVertical?: boolean;
+  textBox?: ShapeTextBox;
 }
 
 export interface PictureControl extends ShapeBase {
-  type: 'picture'
+  type: "picture";
   /** {@link HwpDocument.binData}의 인덱스. */
-  binDataId: number
+  binDataId: number;
   /** 자르기용 원본 사각형. */
-  crop?: { left: SHwpUnit; top: SHwpUnit; right: SHwpUnit; bottom: SHwpUnit }
+  crop?: { left: SHwpUnit; top: SHwpUnit; right: SHwpUnit; bottom: SHwpUnit };
   /** 프레임과 이미지 사이의 안쪽 여백. */
-  innerMargins?: CellMargins
-  brightness?: number
-  contrast?: number
-  effect?: ImageEffect
-  alpha?: number
+  innerMargins?: CellMargins;
+  brightness?: number;
+  contrast?: number;
+  effect?: ImageEffect;
+  alpha?: number;
   /** "원래 크기로" 기능을 위해 보관하는 원본 크기. */
-  originalSize?: { width: HwpUnit; height: HwpUnit }
+  originalSize?: { width: HwpUnit; height: HwpUnit };
 }
 
 export interface LineControl extends ShapeBase {
-  type: 'line'
-  start: Point
-  end: Point
+  type: "line";
+  start: Point;
+  end: Point;
 }
 
 export interface RectangleControl extends ShapeBase {
-  type: 'rectangle'
+  type: "rectangle";
   /** 모서리 둥글기. 짧은 변에 대한 비율로 0-100. */
-  cornerRadius?: number
+  cornerRadius?: number;
 }
 
 export interface EllipseControl extends ShapeBase {
-  type: 'ellipse'
+  type: "ellipse";
   /** 호 / 활 모양 / 부채꼴 변종. */
-  arcKind?: number
-  arcStart?: Point
-  arcEnd?: Point
+  arcKind?: number;
+  arcStart?: Point;
+  arcEnd?: Point;
 }
 
 export interface ArcControl extends ShapeBase {
-  type: 'arc'
-  arcKind: number
-  center: Point
-  axis1: Point
-  axis2: Point
+  type: "arc";
+  arcKind: number;
+  center: Point;
+  axis1: Point;
+  axis2: Point;
 }
 
 export interface PolygonControl extends ShapeBase {
-  type: 'polygon'
-  points: Point[]
+  type: "polygon";
+  points: Point[];
 }
 
 export interface CurveControl extends ShapeBase {
-  type: 'curve'
-  points: Point[]
+  type: "curve";
+  points: Point[];
   /** 점마다 세그먼트 종류 바이트 하나: 직선 또는 곡선. */
-  segmentTypes?: number[]
+  segmentTypes?: number[];
 }
 
 export interface ConnectLineControl extends ShapeBase {
-  type: 'connectLine'
-  start: Point
-  end: Point
-  connectKind: number
+  type: "connectLine";
+  start: Point;
+  end: Point;
+  connectKind: number;
 }
 
 export interface TextArtControl extends ShapeBase {
-  type: 'textArt'
-  text: string
-  fontName: string
-  fontStyle?: string
-  shapeKind?: number
-  lineSpacing?: number
-  charSpacing?: number
-  align?: number
+  type: "textArt";
+  text: string;
+  fontName: string;
+  fontStyle?: string;
+  shapeKind?: number;
+  lineSpacing?: number;
+  charSpacing?: number;
+  align?: number;
 }
 
 export interface OleControl extends ShapeBase {
-  type: 'ole'
-  binDataId: number
+  type: "ole";
+  binDataId: number;
   /** 알 수 있을 때의 OLE 개체 클래스 / prog id. */
-  progId?: string
-  extent?: { width: HwpUnit; height: HwpUnit }
+  progId?: string;
+  extent?: { width: HwpUnit; height: HwpUnit };
 }
 
 export interface ContainerControl extends ShapeBase {
-  type: 'container'
-  children: DrawingControl[]
+  type: "container";
+  children: DrawingControl[];
 }
 
 export type DrawingControl =
@@ -353,25 +366,25 @@ export type DrawingControl =
   | ConnectLineControl
   | TextArtControl
   | OleControl
-  | ContainerControl
+  | ContainerControl;
 
 // ---------------------------------------------------------------------------
 // 수식
 // ---------------------------------------------------------------------------
 
 export interface EquationControl {
-  type: 'equation'
-  placement: ObjectPlacement
+  type: "equation";
+  placement: ObjectPlacement;
   /** HWP 수식 스크립트. 예: `x = {-b +- sqrt {b^2 -4ac}} over {2a}`. */
-  script: string
+  script: string;
   /** 기준선 오프셋, 퍼센트. */
-  baseLine?: number
-  charSize?: HwpUnit
-  color?: Rgb
-  fontName?: string
-  lineMode?: number
+  baseLine?: number;
+  charSize?: HwpUnit;
+  color?: Rgb;
+  fontName?: string;
+  lineMode?: number;
   /** 같은 수식의 LaTeX 표현. 있을 때만. */
-  latex?: string
+  latex?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -389,28 +402,28 @@ export enum HeaderFooterApplyTo {
  * 문단 수(2바이트) 뒤의 바이트이고, 쓸 때 문단 수 뒤에 그대로 붙인다.
  */
 export interface ListHeaderRest {
-  listHeaderRest?: Uint8Array
+  listHeaderRest?: Uint8Array;
 }
 
 export interface HeaderFooterControl extends ListHeaderRest {
-  type: 'header' | 'footer'
-  applyTo: HeaderFooterApplyTo
+  type: "header" | "footer";
+  applyTo: HeaderFooterApplyTo;
   /** 속성(표 141)에서 모델이 해석하지 않는 비트(bit 2 이상). 한글은 쓰레기 값을 쓰기도 한다. */
-  unknownBits?: number
+  unknownBits?: number;
   /** CTRL_HEADER에서 속성 뒤의 바이트. 한글은 4바이트를 더 쓴다. */
-  trailing?: Uint8Array
-  paragraphs: Paragraph[]
+  trailing?: Uint8Array;
+  paragraphs: Paragraph[];
 }
 
 export interface NoteControl extends ListHeaderRest {
-  type: 'footnote' | 'endnote'
+  type: "footnote" | "endnote";
   /** CTRL_HEADER에서 ctrlId 뒤의 바이트. 명세는 8바이트를 쓴다고 적는다(4.3.10.4). */
-  trailing?: Uint8Array
-  paragraphs: Paragraph[]
+  trailing?: Uint8Array;
+  paragraphs: Paragraph[];
   /** 자동 번호 대신 쓰는 명시적 표시. */
-  customMark?: string
+  customMark?: string;
   /** 번호 매기기 카운터 재정의. */
-  numberShape?: NumberFormat
+  numberShape?: NumberFormat;
 }
 
 // ---------------------------------------------------------------------------
@@ -429,26 +442,26 @@ export enum AutoNumberKind {
 
 /** 자동 번호(표 142). 비트의 뜻은 명세(표 143)를 따랐고 한글로 확인하지 않았다. */
 export interface AutoNumberControl {
-  type: 'autoNumber'
-  numberKind: AutoNumberKind
-  numberFormat: NumberFormat
+  type: "autoNumber";
+  numberKind: AutoNumberKind;
+  numberFormat: NumberFormat;
   /** 번호. 한글은 1을 쓴다. */
-  number?: number
+  number?: number;
   /** 번호 모양이 사용자 지정 문자일 때의 문자. */
-  userChar?: string
+  userChar?: string;
   /** 번호 앞뒤에 놓는 텍스트. 예: `- 3 -`을 만드는 `-` `-`. */
-  prefix?: string
-  suffix?: string
+  prefix?: string;
+  suffix?: string;
   /** 각주 표시가 기본으로 받는 위 첨자 서식을 끈다. */
-  supscript?: boolean
+  supscript?: boolean;
   /** 속성에서 모델이 해석하지 않는 비트(bit 13 이상). 쓸 때 OR로 합친다. */
-  unknownBits?: number
+  unknownBits?: number;
 }
 
 export interface NewNumberControl {
-  type: 'newNumber'
-  numberKind: AutoNumberKind
-  startNumber: number
+  type: "newNumber";
+  numberKind: AutoNumberKind;
+  startNumber: number;
 }
 
 export enum PageNumberPosition {
@@ -466,42 +479,42 @@ export enum PageNumberPosition {
 }
 
 export interface PageNumberPositionControl {
-  type: 'pageNumberPosition'
-  position: PageNumberPosition
-  numberFormat: NumberFormat
-  prefix?: string
-  suffix?: string
-  charShapeId?: number
+  type: "pageNumberPosition";
+  position: PageNumberPosition;
+  numberFormat: NumberFormat;
+  prefix?: string;
+  suffix?: string;
+  charShapeId?: number;
 }
 
 /** 현재 쪽만 감추기(표 145). 비트 0~5를 한글로 확인했다(정오표 E24). */
 export interface PageHidingControl {
-  type: 'pageHiding'
-  hideHeader?: boolean
-  hideFooter?: boolean
-  hideMasterPage?: boolean
-  hideBorder?: boolean
-  hideFill?: boolean
-  hidePageNumber?: boolean
+  type: "pageHiding";
+  hideHeader?: boolean;
+  hideFooter?: boolean;
+  hideMasterPage?: boolean;
+  hideBorder?: boolean;
+  hideFill?: boolean;
+  hidePageNumber?: boolean;
   /** 속성에서 모델이 해석하지 않는 비트(bit 6 이상). 쓸 때 OR로 합친다. */
-  unknownBits?: number
+  unknownBits?: number;
 }
 
 export interface PageOddEvenAdjustControl {
-  type: 'pageOddEvenAdjust'
+  type: "pageOddEvenAdjust";
   /** 0 = 양쪽, 1 = 짝수 쪽만, 2 = 홀수 쪽만. */
-  kind: number
+  kind: number;
 }
 
 export interface IndexMarkControl {
-  type: 'indexMark'
-  keyword1: string
-  keyword2?: string
+  type: "indexMark";
+  keyword1: string;
+  keyword2?: string;
 }
 
 export interface BookmarkControl {
-  type: 'bookmark'
-  name: string
+  type: "bookmark";
+  name: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -543,40 +556,40 @@ export enum FieldKind {
  * 편의 기능을 제공한다.
  */
 export interface FieldBeginControl {
-  type: 'fieldBegin'
-  fieldKind: FieldKind
+  type: "fieldBegin";
+  fieldKind: FieldKind;
   /** 이것과 짝인 `fieldEnd`를 잇는 안정적인 id. */
-  id: number
-  name?: string
+  id: number;
+  name?: string;
   /** 필드 명령 문자열. 예: 하이퍼링크의 URL. */
-  command?: string
-  instanceId?: number
+  command?: string;
+  instanceId?: number;
   /** 읽기 전용 상태에서도 수정할 수 있다(표 155 bit 0). */
-  editable?: boolean
+  editable?: boolean;
   /** 필드 내용이 수정됐다(표 155 bit 15). */
-  dirty?: boolean
+  dirty?: boolean;
   /**
    * CTRL_HEADER의 ctrlId. 없으면 `fieldKind`로 정한다. 한글은 메모 필드의 CTRL_HEADER에
    * `%unk`를 쓰고 문단 텍스트에는 `%%me`를 쓴다(정오표 71).
    */
-  ctrlId?: string
+  ctrlId?: string;
   /** 속성(표 155)에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. */
-  unknownBits?: number
+  unknownBits?: number;
   /** 기타 속성 1바이트. */
-  extraProperties?: number
+  extraProperties?: number;
   /** 고유 아이디 뒤의 바이트. 메모 필드는 MEMO_LIST의 메모 번호(UINT32)를 둔다(정오표 71). */
-  trailing?: Uint8Array
+  trailing?: Uint8Array;
   /** CTRL_HEADER 아래의 CTRL_DATA 페이로드. 쓸 때 그대로 둔다. */
-  ctrlData?: Uint8Array
+  ctrlData?: Uint8Array;
   /** 문단 텍스트에서 필드 시작 문자 뒤의 코드 단위 6개. 없으면 ctrlId와 0으로 채운다. */
-  textData?: number[]
+  textData?: number[];
 }
 
 export interface FieldEndControl {
-  type: 'fieldEnd'
-  id: number
+  type: "fieldEnd";
+  id: number;
   /** 문단 텍스트에서 필드 끝 문자 뒤의 코드 단위 6개. 없으면 0으로 채운다. 뜻은 모른다. */
-  textData?: number[]
+  textData?: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -585,59 +598,59 @@ export interface FieldEndControl {
 
 /** 덧말 — 텍스트 구간의 위나 아래에 붙는 루비 같은 주석. */
 export interface DutmalControl {
-  type: 'dutmal'
-  mainText: string
-  subText: string
+  type: "dutmal";
+  mainText: string;
+  subText: string;
   /** 0 = 위, 1 = 아래. */
-  position: number
-  fontSizeRatio?: number
-  align?: number
+  position: number;
+  fontSizeRatio?: number;
+  align?: number;
 }
 
 /** 겹침 문자 — 여러 글자를 한 글리프 상자에 합친 것. */
 export interface ComposeControl {
-  type: 'compose'
-  chars: string
+  type: "compose";
+  chars: string;
   /** 0 = 원, 1 = 반전 원, … */
-  composeKind: number
-  charSize?: number
-  charShapeIds?: number[]
+  composeKind: number;
+  charSize?: number;
+  charShapeIds?: number[];
 }
 
 /** 숨은 설명. */
 export interface HiddenCommentControl extends ListHeaderRest {
-  type: 'hiddenComment'
+  type: "hiddenComment";
   /** CTRL_HEADER에서 ctrlId 뒤의 바이트. */
-  trailing?: Uint8Array
-  paragraphs: Paragraph[]
+  trailing?: Uint8Array;
+  paragraphs: Paragraph[];
 }
 
 export interface MemoControl {
-  type: 'memo'
-  memoShapeId: number
-  paragraphs: Paragraph[]
-  author?: string
-  created?: string
+  type: "memo";
+  memoShapeId: number;
+  paragraphs: Paragraph[];
+  author?: string;
+  created?: string;
 }
 
 /** 양식 컨트롤 (버튼, 편집 상자, 콤보 상자 등). */
 export interface FormObjectControl {
-  type: 'formObject'
-  formKind: number
-  name: string
-  properties: Record<string, string | number | boolean>
-  placement: ObjectPlacement
+  type: "formObject";
+  formKind: number;
+  name: string;
+  properties: Record<string, string | number | boolean>;
+  placement: ObjectPlacement;
 }
 
 /** 프레임은 파싱했지만 본문은 못 한 것. 왕복을 위해 보관한다. */
 export interface UnknownControl {
-  type: 'unknown'
-  ctrlId: string
+  type: "unknown";
+  ctrlId: string;
   /** 라이터가 그대로 다시 내보낼 수 있도록 남긴 원시 레코드 페이로드. */
-  raw?: Uint8Array
+  raw?: Uint8Array;
   /** 텍스트에서 이 컨트롤을 가리키는 제어 문자. 없으면 11(그리기 개체)로 쓴다. */
-  charCode?: number
-  placement?: ObjectPlacement
+  charCode?: number;
+  placement?: ObjectPlacement;
 }
 
 // ---------------------------------------------------------------------------
@@ -645,35 +658,35 @@ export interface UnknownControl {
 // ---------------------------------------------------------------------------
 
 export interface TextItem {
-  type: 'text'
-  value: string
+  type: "text";
+  value: string;
 }
 
 export interface TabItem {
-  type: 'tab'
-  width?: HwpUnit
-  leader?: LineStyle
+  type: "tab";
+  width?: HwpUnit;
+  leader?: LineStyle;
 }
 
 /** 부드러운 줄바꿈(Shift+Enter) — 새 문단을 시작하지 않는다. */
 export interface LineBreakItem {
-  type: 'lineBreak'
+  type: "lineBreak";
 }
 
 /** 문단 안의 명시적 단 나눔. */
 export interface ColumnBreakItem {
-  type: 'columnBreak'
+  type: "columnBreak";
 }
 
 /** 문단 안의 강제 쪽 나눔. */
 export interface PageBreakItem {
-  type: 'pageBreak'
+  type: "pageBreak";
 }
 
 /** 묶음 빈칸, 고정폭 빈칸, 하이픈 컨트롤. */
 export interface SpecialCharItem {
-  type: 'specialChar'
-  char: 'nbsp' | 'fixedWidthSpace' | 'hyphen' | 'titleMark'
+  type: "specialChar";
+  char: "nbsp" | "fixedWidthSpace" | "hyphen" | "titleMark";
 }
 
 export type Control =
@@ -696,7 +709,7 @@ export type Control =
   | HiddenCommentControl
   | MemoControl
   | FormObjectControl
-  | UnknownControl
+  | UnknownControl;
 
 export type InlineItem =
   | TextItem
@@ -705,72 +718,93 @@ export type InlineItem =
   | ColumnBreakItem
   | PageBreakItem
   | SpecialCharItem
-  | Control
+  | Control;
 
 /** 글자 모양 하나를 공유하는 최대 길이의 텍스트 구간. */
 export interface Run {
   /** {@link HwpDocument.charShapes}의 인덱스. */
-  charShapeId: number
-  items: InlineItem[]
+  charShapeId: number;
+  items: InlineItem[];
 }
 
 export interface Paragraph {
   /** {@link HwpDocument.paraShapes}의 인덱스. */
-  paraShapeId: number
+  paraShapeId: number;
   /** {@link HwpDocument.styles}의 인덱스. */
-  styleId: number
-  runs: Run[]
+  styleId: number;
+  runs: Run[];
   /** 이 문단을 새 쪽에서 시작한다. */
-  pageBreak?: boolean
+  pageBreak?: boolean;
   /** 이 문단을 다음 단에서 시작한다. */
-  columnBreak?: boolean
+  columnBreak?: boolean;
   /**
    * 문단 머리 단 나누기 종류에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다.
    * 0x01(구역 나누기)은 구역 첫 문단에, 0x02(다단 나누기)는 `cold`를 가진 문단에 붙는다.
    */
-  divideSortUnknownBits?: number
+  divideSortUnknownBits?: number;
   /** 앞 문단의 목록 번호를 이어간다. */
-  merged?: boolean
+  merged?: boolean;
   /** 개요 번호 매기기를 위한 명시적 목록 수준 재정의. */
-  listLevel?: number
+  listLevel?: number;
   /** 왕복에서 보존되는 안정적인 id. */
-  id?: number
+  id?: number;
   /** 변경 추적 병합 문단 여부(UINT16, 5.0.3.2+). 뜻을 다 알지 못해 값 그대로 둔다. 0이면 생략. */
-  trackChangeMerged?: number
+  trackChangeMerged?: number;
   /**
    * 한글이 마지막으로 조판한 줄 배치 캐시. 읽은 그대로 다시 쓴다.
    * 없으면(새로 만든 문단) 코덱이 필요한 경우에만 만들어 쓴다. 텍스트를 고쳐도 갱신하지 않는다.
    */
-  lineSegments?: LineSegment[]
+  lineSegments?: LineSegment[];
   /** 텍스트 구간 표시(형광펜, 교정 부호 등). 구간끼리 겹칠 수 있다. */
-  rangeTags?: RangeTag[]
+  rangeTags?: RangeTag[];
 }
 
 /** 줄 배치 캐시 한 칸(줄 하나, 또는 줄 안의 세그먼트 하나). 길이는 HWPUNIT. */
 export interface LineSegment {
   /** 이 줄이 시작하는 글자 위치. */
-  textStart: number
+  textStart: number;
   /** 줄의 세로 위치. */
-  y: number
-  height: number
-  textHeight: number
+  y: number;
+  height: number;
+  textHeight: number;
   /** 줄의 세로 위치에서 베이스라인까지 거리. */
-  baselineGap: number
-  lineSpacing: number
+  baselineGap: number;
+  lineSpacing: number;
   /** 단 안에서의 시작 위치. */
-  x: number
-  width: number
-  /** 쪽/단 첫 줄, 빈 세그먼트 등 조판 표시 비트. 값 그대로 둔다. */
-  flags: number
+  x: number;
+  width: number;
+  /** 쪽/단 첫 줄, 빈 세그먼트 등 조판 표시 비트. */
+  flags: LineSegmentFlag;
+}
+
+export interface LineSegmentFlag {
+  /** 페이지의 첫 줄인지 여부 */
+  firstLineInPage?: boolean;
+  /** 컬럼의 첫 줄인지 여부 */
+  firstLineInColumn?: boolean;
+  /** 텍스트가 배열되지 않은 빈 세그먼트인지 여부 */
+  emptySegment?: boolean;
+  /** 줄의 첫 세그먼트인지 여부 */
+  firstSegmentInLine?: boolean;
+  /** 줄의 마지막 세그먼트인지 */
+  lastSegmentInLine?: boolean;
+  /** 줄의 마지막에 auto-hyphenation이 수행되었는지 여부 */
+  autoHyphenation?: boolean;
+  /** indentation 여부 */
+  indentation?: boolean;
+  /** 문단 머리 모양 적용 */
+  headingApplied?: boolean;
+  /** 구현상의 편의를 위한 property */
+  unknownBits?: number;
 }
 
 export interface RangeTag {
   /** 구간 시작 글자 위치. */
-  start: number
+  start: number;
   /** 구간 끝 글자 위치. */
-  end: number
+  end: number;
   /** 종류(0~255). */
-  kind: number
+  kind: number;
   /** 종류별 데이터(24비트). */
-  data: number
+  data: number;
 }

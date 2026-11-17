@@ -40,6 +40,7 @@ import {
   VerticalAlign,
   defaultPageDef,
   rgb,
+  type LineSegmentFlag,
 } from "@js-hwp/core";
 import {
   ByteReader,
@@ -250,12 +251,14 @@ function readParagraph(
   return paragraph;
 }
 
+const LINE_SEGMENT_KNOWN = 0x003f0003;
+
 /** 표 62. 36바이트 항목이 문단 머리의 줄 정보 수만큼 이어진다. */
 function readParaLineSeg(node: RecordNode): LineSegment[] {
   const reader = new ByteReader(node.payload);
   const out: LineSegment[] = [];
   while (reader.hasMore(36)) {
-    out.push({
+    const lineSeg = {
       textStart: reader.uint32(),
       y: reader.int32(),
       height: reader.int32(),
@@ -264,7 +267,23 @@ function readParaLineSeg(node: RecordNode): LineSegment[] {
       lineSpacing: reader.int32(),
       x: reader.int32(),
       width: reader.int32(),
-      flags: reader.uint32(),
+    };
+    const flags = reader.uint32();
+    const flag: LineSegmentFlag = {
+      firstLineInPage: bit(flags, 0),
+      firstLineInColumn: bit(flags, 1),
+      emptySegment: bit(flags, 16),
+      firstSegmentInLine: bit(flags, 17),
+      lastSegmentInLine: bit(flags, 18),
+      autoHyphenation: bit(flags, 19),
+      indentation: bit(flags, 20),
+      headingApplied: bit(flags, 21),
+    };
+    const unknownBits = (flags & ~LINE_SEGMENT_KNOWN) >>> 0;
+    if (unknownBits) flag.unknownBits = unknownBits;
+    out.push({
+      ...lineSeg,
+      flags: flag,
     });
   }
   return out;
@@ -367,7 +386,10 @@ function readParaText(
       // 필드는 텍스트 쪽 ctrlId가 CTRL_HEADER와 다를 수 있다(정오표 71).
       if (control?.type === "fieldBegin") {
         control.textData = textData(view, start);
-        const kind = FIELD_KIND_BY_CTRL_ID[readCtrlId(view.getUint32((start + 1) * 2, true))];
+        const kind =
+          FIELD_KIND_BY_CTRL_ID[
+            readCtrlId(view.getUint32((start + 1) * 2, true))
+          ];
         if (control.fieldKind === FieldKind.Unknown && kind !== undefined)
           control.fieldKind = kind;
       }
@@ -791,11 +813,15 @@ function readSectionTrailing(properties: SectionProperties): void {
  * {@link readSectionTrailing}이 읽는 필드를 `trailing` 사본에 덮어쓴다. `trailing`이 없으면 `length`
  * 바이트로 만든다. 7바이트보다 짧은 `trailing`은 필드를 쓸 때만 늘린다.
  */
-function sectionTrailingBytes(p: SectionProperties, length: number): Uint8Array {
+function sectionTrailingBytes(
+  p: SectionProperties,
+  length: number,
+): Uint8Array {
   const source = p.trailing ?? new Uint8Array(length);
   const hasFields =
     p.memoShapeId !== undefined ||
-    (p.textDirection ?? TextDirection.Horizontal) !== TextDirection.Horizontal ||
+    (p.textDirection ?? TextDirection.Horizontal) !==
+      TextDirection.Horizontal ||
     p.verticalHeaderFooter === true;
   if (source.length < 7 && !hasFields) return source;
   const trailing = new Uint8Array(Math.max(source.length, 7));
@@ -803,7 +829,12 @@ function sectionTrailingBytes(p: SectionProperties, length: number): Uint8Array 
   const memoShapeRef = toIdRef(p.memoShapeId, "메모 모양");
   trailing[4] = memoShapeRef & 0xff;
   trailing[5] = memoShapeRef >>> 8;
-  let flags = setBits(trailing[6]!, 1, 3, p.textDirection ?? TextDirection.Horizontal);
+  let flags = setBits(
+    trailing[6]!,
+    1,
+    3,
+    p.textDirection ?? TextDirection.Horizontal,
+  );
   flags = setBit(flags, 4, p.verticalHeaderFooter);
   trailing[6] = flags;
   return trailing;
@@ -1460,6 +1491,16 @@ function writeParagraph(
     if (lineSegments.length > 0) {
       const segs = new ByteWriter();
       for (const seg of lineSegments) {
+        const f = seg.flags;
+        let flags = (f.unknownBits ?? 0) & ~LINE_SEGMENT_KNOWN;
+        flags = setBit(flags, 0, f.firstLineInPage);
+        flags = setBit(flags, 1, f.firstLineInColumn);
+        flags = setBit(flags, 16, f.emptySegment);
+        flags = setBit(flags, 17, f.firstSegmentInLine);
+        flags = setBit(flags, 18, f.lastSegmentInLine);
+        flags = setBit(flags, 19, f.autoHyphenation);
+        flags = setBit(flags, 20, f.indentation);
+        flags = setBit(flags, 21, f.headingApplied);
         segs
           .uint32(seg.textStart)
           .int32(seg.y)
@@ -1469,7 +1510,7 @@ function writeParagraph(
           .int32(seg.lineSpacing)
           .int32(seg.x)
           .int32(seg.width)
-          .uint32(seg.flags);
+          .uint32(flags);
       }
       writer.write(SectionTag.ParaLineSeg, segs);
     }
@@ -1521,7 +1562,7 @@ function defaultLineSegment(
     lineSpacing: tableHeight !== undefined ? 600 : 780,
     x: 0,
     width: cellWidth ?? 0,
-    flags: 0x00060000,
+    flags: { firstSegmentInLine: true, lastSegmentInLine: true },
   };
 }
 
@@ -1599,7 +1640,8 @@ function writeControl(
         .uint32(control.instanceId ?? 0);
       if (control.trailing) header.bytes(control.trailing);
       writer.nested(SectionTag.CtrlHeader, header, () => {
-        if (control.ctrlData) writer.write(SectionTag.CtrlData, control.ctrlData);
+        if (control.ctrlData)
+          writer.write(SectionTag.CtrlData, control.ctrlData);
       });
       return;
     }
