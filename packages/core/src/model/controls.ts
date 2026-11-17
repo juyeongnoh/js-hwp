@@ -453,6 +453,7 @@ export interface PageNumberPositionControl {
   charShapeId?: number
 }
 
+/** 현재 쪽만 감추기(표 145). 비트 0~5를 한글로 확인했다(정오표 E24). */
 export interface PageHidingControl {
   type: 'pageHiding'
   hideHeader?: boolean
@@ -461,6 +462,8 @@ export interface PageHidingControl {
   hideBorder?: boolean
   hideFill?: boolean
   hidePageNumber?: boolean
+  /** 속성에서 모델이 해석하지 않는 비트(bit 6 이상). 쓸 때 OR로 합친다. */
+  unknownBits?: number
 }
 
 export interface PageOddEvenAdjustControl {

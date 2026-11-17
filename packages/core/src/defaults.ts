@@ -37,7 +37,7 @@ import {
 } from "./model/document.js";
 import { rgb } from "./model/color.js";
 import { GutterKind, type PageDef, type Section } from "./model/section.js";
-import { PAPER, mm, pt } from "./model/units.js";
+import { PAPER, mm, pt, toHalfHwpUnit } from "./model/units.js";
 
 /** 한글이 함께 배포하는 글꼴. 문자 체계별 기본 서체로 쓴다. */
 export const DEFAULT_FONTS: FontFace[] = [
@@ -179,7 +179,8 @@ export function defaultPageDef(overrides: Partial<PageDef> = {}): PageDef {
 export function defaultSection(overrides: Partial<Section> = {}): Section {
   return {
     pageDef: defaultPageDef(),
-    properties: { defaultTabStop: pt(40) },
+    // 한글 새 문서의 기본 탭 간격 40pt. 이 칸은 HWPUNIT의 2배로 저장한다(정오표 54).
+    properties: { defaultTabStop: toHalfHwpUnit(pt(40)) },
     paragraphs: [],
     ...overrides,
   };

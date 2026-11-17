@@ -24,7 +24,12 @@ import {
   type Paragraph,
   type RangeTag,
   type Run,
+  type NoteShape,
+  type PageBorderFill,
+  type PageDef,
+  PageNumberStart,
   type Section,
+  type SectionProperties,
   PageBreakInTable,
   RelativeTo,
   type TableCell,
@@ -296,6 +301,8 @@ function readParaText(
     payload.byteOffset,
     payload.byteLength,
   );
+
+  // WCHAR(2바이트) 칸의 개수
   const total = Math.min(
     Math.floor(payload.byteLength / 2),
     declaredCharCount || Infinity,
@@ -319,6 +326,7 @@ function readParaText(
   while (position < total) {
     const code = view.getUint16(position * 2, true);
 
+    // 컨트롤 문자가 아닌 일반 문자일 때
     if (code >= 32) {
       if (pending === "") pendingStart = position;
       pending += String.fromCharCode(code);
@@ -436,6 +444,8 @@ function readControl(
         numberKind: reader.optionalUint32() & 0x0f,
         numberFormat: 0,
       };
+    case CtrlId.PageHiding:
+      return readPageHiding(reader.optionalUint32());
     case CtrlId.DrawingObject:
       return readDrawingObject(node, context);
     default:
@@ -516,11 +526,94 @@ function readNestedParagraphs(
     : [{ paraShapeId: 0, styleId: 0, runs: [{ charShapeId: 0, items: [] }] }];
 }
 
-function readSectionDefinition(node: RecordNode, section: Section): void {
-  const pageDefNode = childWithTag(node, SectionTag.PageDef);
-  if (!pageDefNode) return;
+/** 표 145 bit 0~5(정오표 E24). */
+const PAGE_HIDING_KNOWN = 0x3f;
 
-  const reader = new ByteReader(pageDefNode.payload);
+/** 표 145. 속성은 명세의 2바이트가 아니라 4바이트다(정오표 62). */
+function readPageHiding(props: number): Control {
+  const control: Extract<Control, { type: "pageHiding" }> = {
+    type: "pageHiding",
+  };
+  if (bit(props, 0)) control.hideHeader = true;
+  if (bit(props, 1)) control.hideFooter = true;
+  if (bit(props, 2)) control.hideMasterPage = true;
+  if (bit(props, 3)) control.hideBorder = true;
+  if (bit(props, 4)) control.hideFill = true;
+  if (bit(props, 5)) control.hidePageNumber = true;
+  const unknownBits = (props & ~PAGE_HIDING_KNOWN) >>> 0;
+  if (unknownBits) control.unknownBits = unknownBits;
+  return control;
+}
+
+/** 표 130에서 모델이 이름으로 다루는 비트: 0~4, 19, 20~21(정오표 E23). */
+const SECTION_KNOWN = 0x0030001f | (1 << 19);
+/** 표 134 bit 0~13. */
+const NOTE_SHAPE_KNOWN = 0x3fff;
+/** 표 136 bit 0~4. */
+const PAGE_BORDER_FILL_KNOWN = 0x1f;
+/** 표 132 bit 0~2. */
+const PAGE_DEF_KNOWN = 0x07;
+
+function readSectionDefinition(node: RecordNode, section: Section): void {
+  const reader = new ByteReader(node.payload);
+  reader.uint32(); // ctrlId
+  const props = reader.optionalUint32();
+  const properties: SectionProperties = {
+    columnSpacing: reader.optionalInt16(),
+    lineGrid: reader.optionalInt16(),
+    charGrid: reader.optionalInt16(),
+    defaultTabStop: reader.optionalUint32(),
+  };
+  const numberingRef = reader.optionalUint16();
+  const page = reader.optionalUint16();
+  const picture = reader.optionalUint16();
+  const table = reader.optionalUint16();
+  const equation = reader.optionalUint16();
+  if (reader.hasMore(2)) properties.language = reader.uint16();
+  if (reader.hasMore()) properties.trailing = reader.rest();
+
+  if (bit(props, 0)) properties.hideFirstHeader = true;
+  if (bit(props, 1)) properties.hideFirstFooter = true;
+  if (bit(props, 2)) properties.hideFirstMasterPage = true;
+  if (bit(props, 3)) properties.hideFirstPageBorder = true;
+  if (bit(props, 4)) properties.hideFirstPageFill = true;
+  if (bit(props, 19)) properties.hideEmptyLines = true;
+  properties.pageNumberStart = bits(props, 20, 21);
+  const unknownBits = (props & ~SECTION_KNOWN) >>> 0;
+  if (unknownBits) properties.unknownBits = unknownBits;
+
+  // 번호 문단 모양은 1부터 센다(정오표 56, 추정). 시작 번호 0은 앞 구역에 이어서다.
+  const outlineNumberingId = fromIdRef(numberingRef);
+  if (outlineNumberingId !== undefined)
+    properties.outlineNumberingId = outlineNumberingId;
+  const startNumbers = {
+    ...(page && { page }),
+    ...(picture && { picture }),
+    ...(table && { table }),
+    ...(equation && { equation }),
+  };
+  if (Object.keys(startNumbers).length > 0)
+    properties.startNumbers = startNumbers;
+  section.properties = properties;
+
+  const pageDefNode = childWithTag(node, SectionTag.PageDef);
+  if (pageDefNode) section.pageDef = readPageDef(pageDefNode);
+
+  const notes = node.children.filter(
+    (child) => child.tagId === SectionTag.FootnoteShape,
+  );
+  if (notes[0]) section.footnoteShape = readNoteShape(notes[0]);
+  if (notes[1]) section.endnoteShape = readNoteShape(notes[1]);
+
+  const borderFills = node.children.filter(
+    (child) => child.tagId === SectionTag.PageBorderFill,
+  );
+  if (borderFills.length > 0)
+    section.pageBorderFills = borderFills.map(readPageBorderFill);
+}
+
+function readPageDef(node: RecordNode): PageDef {
+  const reader = new ByteReader(node.payload);
   const width = reader.hwpUnit();
   const height = reader.hwpUnit();
   const left = reader.hwpUnit();
@@ -532,13 +625,68 @@ function readSectionDefinition(node: RecordNode, section: Section): void {
   const gutter = reader.hwpUnit();
   const properties = reader.optionalUint32();
 
-  section.pageDef = {
+  const pageDef: PageDef = {
     width,
     height,
     margins: { left, right, top, bottom, header, footer, gutter },
     landscape: bit(properties, 0),
     gutterKind: bits(properties, 1, 2),
   };
+  const unknownBits = (properties & ~PAGE_DEF_KNOWN) >>> 0;
+  if (unknownBits) pageDef.unknownBits = unknownBits;
+  return pageDef;
+}
+
+/** 표 133. 구분선 길이는 4바이트다(정오표 59). */
+function readNoteShape(node: RecordNode): NoteShape {
+  const reader = new ByteReader(node.payload);
+  const props = reader.optionalUint32();
+  const userChar = reader.optionalUint16();
+  const prefix = reader.optionalUint16();
+  const suffix = reader.optionalUint16();
+  const shape: NoteShape = {
+    numberFormat: bits(props, 0, 7),
+    startNumber: reader.optionalUint16(),
+    placement: bits(props, 8, 9),
+    numbering: bits(props, 10, 11),
+    separatorLength: reader.optionalInt32(),
+    aboveSpacing: reader.optionalInt16(),
+    belowSpacing: reader.optionalInt16(),
+    betweenSpacing: reader.optionalInt16(),
+    separatorStyle: reader.optionalUint8(),
+    separatorWidth: reader.optionalUint8(),
+    separatorColor: reader.optionalColor(),
+  };
+  if (userChar) shape.userChar = String.fromCharCode(userChar);
+  if (prefix) shape.prefix = String.fromCharCode(prefix);
+  if (suffix) shape.suffix = String.fromCharCode(suffix);
+  if (bit(props, 12)) shape.superscript = true;
+  if (bit(props, 13)) shape.beneathText = true;
+  const unknownBits = (props & ~NOTE_SHAPE_KNOWN) >>> 0;
+  if (unknownBits) shape.unknownBits = unknownBits;
+  return shape;
+}
+
+/** 표 135. 전체 길이는 14바이트다(정오표 60). */
+function readPageBorderFill(node: RecordNode): PageBorderFill {
+  const reader = new ByteReader(node.payload);
+  const props = reader.optionalUint32();
+  const fill: PageBorderFill = {
+    fillArea: bits(props, 3, 4),
+    offsetLeft: reader.optionalInt16(),
+    offsetRight: reader.optionalInt16(),
+    offsetTop: reader.optionalInt16(),
+    offsetBottom: reader.optionalInt16(),
+  };
+  if (bit(props, 0)) fill.fromPaperEdge = true;
+  if (bit(props, 1)) fill.includeHeader = true;
+  if (bit(props, 2)) fill.includeFooter = true;
+  // 테두리/배경 ID는 다른 레코드처럼 1부터 센다고 보고 0을 없음으로 둔다(정오표 E23, 미확인).
+  const borderFillId = fromIdRef(reader.optionalUint16());
+  if (borderFillId !== undefined) fill.borderFillId = borderFillId;
+  const unknownBits = (props & ~PAGE_BORDER_FILL_KNOWN) >>> 0;
+  if (unknownBits) fill.unknownBits = unknownBits;
+  return fill;
 }
 
 function readColumnDefinition(reader: ByteReader, section: Section): void {
@@ -981,6 +1129,8 @@ function ctrlIdFor(control: Control): string {
       return CtrlId.Endnote;
     case "bookmark":
       return CtrlId.Bookmark;
+    case "pageHiding":
+      return CtrlId.PageHiding;
     case "fieldBegin":
       return (
         Object.entries(FIELD_KIND_BY_CTRL_ID).find(
@@ -1118,9 +1268,19 @@ function writeParagraph(
     if (rangeTags.length > 0) {
       const tags = new ByteWriter();
       for (const tag of rangeTags) {
-        if (tag.kind < 0 || tag.kind > 0xff || tag.data < 0 || tag.data > 0xffffff)
-          throw new HwpFormatError(`영역 태그 종류는 0~255, 데이터는 24비트여야 합니다: ${tag.kind}, ${tag.data}`);
-        tags.uint32(tag.start).uint32(tag.end).uint32(((tag.kind << 24) | tag.data) >>> 0);
+        if (
+          tag.kind < 0 ||
+          tag.kind > 0xff ||
+          tag.data < 0 ||
+          tag.data > 0xffffff
+        )
+          throw new HwpFormatError(
+            `영역 태그 종류는 0~255, 데이터는 24비트여야 합니다: ${tag.kind}, ${tag.data}`,
+          );
+        tags
+          .uint32(tag.start)
+          .uint32(tag.end)
+          .uint32(((tag.kind << 24) | tag.data) >>> 0);
       }
       writer.write(SectionTag.ParaRangeTag, tags);
     }
@@ -1161,7 +1321,7 @@ function writeControl(
     control.ctrlId === CtrlId.SectionDefinition &&
     section
   ) {
-    writeSectionDefinition(writer, section);
+    writeSectionDefinition(writer, doc, section);
     return;
   }
   if (
@@ -1234,6 +1394,20 @@ function writeControl(
     case "picture":
       writePicture(writer, doc, control);
       return;
+    case "pageHiding": {
+      let props = (control.unknownBits ?? 0) & ~PAGE_HIDING_KNOWN;
+      props = setBit(props, 0, control.hideHeader);
+      props = setBit(props, 1, control.hideFooter);
+      props = setBit(props, 2, control.hideMasterPage);
+      props = setBit(props, 3, control.hideBorder);
+      props = setBit(props, 4, control.hideFill);
+      props = setBit(props, 5, control.hidePageNumber);
+      writer.write(
+        SectionTag.CtrlHeader,
+        new ByteWriter().uint32(writeCtrlId(CtrlId.PageHiding)).uint32(props),
+      );
+      return;
+    }
     default: {
       const raw = control.type === "unknown" ? control.raw : undefined;
       if (raw) writer.write(SectionTag.CtrlHeader, raw);
@@ -1266,57 +1440,142 @@ function writeNestedParagraphs(
   });
 }
 
-function writeSectionDefinition(writer: RecordWriter, section: Section): void {
-  const header = new ByteWriter();
-  header.uint32(writeCtrlId(CtrlId.SectionDefinition));
-  header.uint32(0); // properties
-  header.uint16(0); // column spacing
-  header.uint16(section.properties?.lineGrid ?? 0);
-  header.uint16(section.properties?.charGrid ?? 0);
-  header.hwpUnit(section.properties?.defaultTabStop ?? 4000);
-  header.uint16(0); // numbering id
-  header.uint16(0); // page starting number
-  header.uint16(0);
-  header.uint16(0);
-  header.uint16(0);
-  header.uint16(0); // representative language (5.0.1.5+)
+function writeSectionDefinition(
+  writer: RecordWriter,
+  doc: HwpDocument,
+  section: Section,
+): void {
+  const p = section.properties ?? {};
+  let props = (p.unknownBits ?? 0) & ~SECTION_KNOWN;
+  props = setBit(props, 0, p.hideFirstHeader);
+  props = setBit(props, 1, p.hideFirstFooter);
+  props = setBit(props, 2, p.hideFirstMasterPage);
+  props = setBit(props, 3, p.hideFirstPageBorder);
+  props = setBit(props, 4, p.hideFirstPageFill);
+  props = setBit(props, 19, p.hideEmptyLines);
+  props = setBits(props, 20, 21, p.pageNumberStart ?? PageNumberStart.Continue);
+
+  const version = versionNumber(doc.version);
+  const header = new ByteWriter()
+    .uint32(writeCtrlId(CtrlId.SectionDefinition))
+    .uint32(props)
+    // 새 구역은 한글 새 문서의 값(4mm, 40pt)을 따른다.
+    .hwpUnit16(p.columnSpacing ?? 1134)
+    .hwpUnit16(p.lineGrid ?? 0)
+    .hwpUnit16(p.charGrid ?? 0)
+    .uint32(p.defaultTabStop ?? 8000)
+    .uint16(toIdRef(p.outlineNumberingId, "번호 문단 모양"))
+    .uint16(p.startNumbers?.page ?? 0)
+    .uint16(p.startNumbers?.picture ?? 0)
+    .uint16(p.startNumbers?.table ?? 0)
+    .uint16(p.startNumbers?.equation ?? 0);
+  if (p.language !== undefined || version >= 0x05000105)
+    header.uint16(p.language ?? 0);
+  // 새 구역의 끝 바이트는 한글이 저장한 길이를 따른다: 5.0.4.0 이상 17B, 그 전 8B(정오표 55).
+  header.bytes(p.trailing ?? new Uint8Array(version >= 0x05000400 ? 17 : 8));
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
     const { pageDef } = section;
-    const page = new ByteWriter()
-      .hwpUnit(pageDef.width)
-      .hwpUnit(pageDef.height)
-      .hwpUnit(pageDef.margins.left)
-      .hwpUnit(pageDef.margins.right)
-      .hwpUnit(pageDef.margins.top)
-      .hwpUnit(pageDef.margins.bottom)
-      .hwpUnit(pageDef.margins.header)
-      .hwpUnit(pageDef.margins.footer)
-      .hwpUnit(pageDef.margins.gutter);
-
-    let properties = 0;
-    properties = setBit(properties, 0, pageDef.landscape);
-    properties = setBits(properties, 1, 2, pageDef.gutterKind);
-    page.uint32(properties);
-
-    writer.write(SectionTag.PageDef, page);
+    let pageProps = (pageDef.unknownBits ?? 0) & ~PAGE_DEF_KNOWN;
+    pageProps = setBit(pageProps, 0, pageDef.landscape);
+    pageProps = setBits(pageProps, 1, 2, pageDef.gutterKind);
+    writer.write(
+      SectionTag.PageDef,
+      new ByteWriter()
+        .hwpUnit(pageDef.width)
+        .hwpUnit(pageDef.height)
+        .hwpUnit(pageDef.margins.left)
+        .hwpUnit(pageDef.margins.right)
+        .hwpUnit(pageDef.margins.top)
+        .hwpUnit(pageDef.margins.bottom)
+        .hwpUnit(pageDef.margins.header)
+        .hwpUnit(pageDef.margins.footer)
+        .hwpUnit(pageDef.margins.gutter)
+        .uint32(pageProps),
+    );
 
     // 한글이 파일을 열려면 각주와 미주 모양이 반드시 있어야 한다.
-    writer.write(SectionTag.FootnoteShape, noteShapeBytes(false));
-    writer.write(SectionTag.FootnoteShape, noteShapeBytes(true));
-    for (let page = 0; page < 3; page++) {
+    writer.write(
+      SectionTag.FootnoteShape,
+      noteShapeBytes(section.footnoteShape ?? defaultNoteShape(false)),
+    );
+    writer.write(
+      SectionTag.FootnoteShape,
+      noteShapeBytes(section.endnoteShape ?? defaultNoteShape(true)),
+    );
+    for (const fill of section.pageBorderFills ?? DEFAULT_PAGE_BORDER_FILLS) {
+      let fillProps = (fill.unknownBits ?? 0) & ~PAGE_BORDER_FILL_KNOWN;
+      fillProps = setBit(fillProps, 0, fill.fromPaperEdge);
+      fillProps = setBit(fillProps, 1, fill.includeHeader);
+      fillProps = setBit(fillProps, 2, fill.includeFooter);
+      fillProps = setBits(fillProps, 3, 4, fill.fillArea);
       writer.write(
         SectionTag.PageBorderFill,
         new ByteWriter()
-          .uint32(1)
-          .int16(1417)
-          .int16(1417)
-          .int16(1417)
-          .int16(1417)
-          .uint16(0),
+          .uint32(fillProps)
+          .hwpUnit16(fill.offsetLeft)
+          .hwpUnit16(fill.offsetRight)
+          .hwpUnit16(fill.offsetTop)
+          .hwpUnit16(fill.offsetBottom)
+          .uint16(toIdRef(fill.borderFillId, "쪽 테두리/배경")),
       );
     }
   });
+}
+
+/** 새 구역의 쪽 테두리/배경. 이전 쓰기 코드의 값 그대로다. */
+const DEFAULT_PAGE_BORDER_FILLS: readonly PageBorderFill[] = Array.from(
+  { length: 3 },
+  () => ({
+    fromPaperEdge: true,
+    fillArea: 0,
+    offsetLeft: 1417,
+    offsetRight: 1417,
+    offsetTop: 1417,
+    offsetBottom: 1417,
+  }),
+);
+
+/** 새 구역의 각주/미주 모양. 한글 새 문서가 저장하는 값이다(정오표 E23). */
+function defaultNoteShape(endnote: boolean): NoteShape {
+  return {
+    numberFormat: 0,
+    suffix: ")",
+    startNumber: 1,
+    numbering: 0,
+    placement: 0,
+    separatorLength: endnote ? 14692344 : -1,
+    aboveSpacing: 850,
+    belowSpacing: 567,
+    betweenSpacing: endnote ? 0 : 283,
+    separatorStyle: 1,
+    separatorWidth: 1,
+    separatorColor: rgb(0, 0, 0),
+  };
+}
+
+/** 표 133. 구분선 길이는 4바이트다(정오표 59). */
+function noteShapeBytes(shape: NoteShape): ByteWriter {
+  let props = (shape.unknownBits ?? 0) & ~NOTE_SHAPE_KNOWN;
+  props = setBits(props, 0, 7, shape.numberFormat);
+  props = setBits(props, 8, 9, shape.placement);
+  props = setBits(props, 10, 11, shape.numbering);
+  props = setBit(props, 12, shape.superscript);
+  props = setBit(props, 13, shape.beneathText);
+  const char = (value: string | undefined): number => value?.charCodeAt(0) ?? 0;
+  return new ByteWriter()
+    .uint32(props)
+    .uint16(char(shape.userChar))
+    .uint16(char(shape.prefix))
+    .uint16(char(shape.suffix))
+    .uint16(shape.startNumber)
+    .int32(shape.separatorLength)
+    .hwpUnit16(shape.aboveSpacing)
+    .hwpUnit16(shape.belowSpacing)
+    .hwpUnit16(shape.betweenSpacing)
+    .uint8(shape.separatorStyle)
+    .uint8(shape.separatorWidth)
+    .color(shape.separatorColor);
 }
 
 function writeColumnDefinition(writer: RecordWriter, section: Section): void {
@@ -1336,25 +1595,6 @@ function writeColumnDefinition(writer: RecordWriter, section: Section): void {
       .uint8(0)
       .color(rgb(0, 0, 0)),
   );
-}
-
-function noteShapeBytes(endnote: boolean): ByteWriter {
-  // 사용자 기호, 앞/뒤 장식, 시작 번호 뒤에는 HWPUNIT16 간격 값이 온다.
-  // 한글이 쓴 파일은 28바이트이며 마지막 색상까지 이 순서로 저장한다.
-  return new ByteWriter()
-    .uint32(0) // properties
-    .uint16(0) // user character
-    .uint16(0) // prefix
-    .uint16(0x0029) // suffix
-    .uint16(1) // start number
-    .hwpUnit16(endnote ? 12280 : -1)
-    .hwpUnit16(endnote ? 224 : -1)
-    .hwpUnit16(850)
-    .hwpUnit16(567)
-    .hwpUnit16(endnote ? 0 : 283)
-    .uint8(1) // separator style
-    .uint8(1) // separator width
-    .color(rgb(0, 0, 0)); // separator color
 }
 
 function writeTable(
