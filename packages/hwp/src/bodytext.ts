@@ -379,6 +379,7 @@ function readParaText(
     position += 8;
 
     if (form === "extended") {
+      // 파라미터로 넘겨받은 컨트롤 레코드
       const node = controlNodes[controlIndex++];
       const control = node ? readControl(node, context, section) : undefined;
       // 모르는 컨트롤은 텍스트의 제어 문자도 원본대로 다시 쓴다.
@@ -717,8 +718,8 @@ function readPageHiding(props: number): Control {
   return control;
 }
 
-/** 표 130에서 모델이 이름으로 다루는 비트: 0~4, 8~9, 19, 20~21(정오표 E23, E25). */
-const SECTION_KNOWN = 0x0030031f | (1 << 19);
+/** 표 130에서 모델이 이름으로 다루는 비트: 0~5, 8~9, 19, 20~21(정오표 E23, E25, E26). */
+const SECTION_KNOWN = 0x0030033f | (1 << 19);
 /** 표 134 bit 0~13. */
 const NOTE_SHAPE_KNOWN = 0x3fff;
 /** 표 136 bit 0~4. */
@@ -754,6 +755,7 @@ function readSectionDefinition(
   if (bit(props, 2)) properties.hideFirstMasterPage = true;
   if (bit(props, 3)) properties.hideFirstPageBorder = true;
   if (bit(props, 4)) properties.hideFirstPageFill = true;
+  if (bit(props, 5)) properties.hideFirstPageNumber = true;
   if (bit(props, 8)) properties.showFirstPageBorderOnly = true;
   if (bit(props, 9)) properties.showFirstPageFillOnly = true;
   if (bit(props, 19)) properties.hideEmptyLines = true;
@@ -1731,6 +1733,7 @@ function writeSectionDefinition(
   props = setBit(props, 2, p.hideFirstMasterPage);
   props = setBit(props, 3, p.hideFirstPageBorder);
   props = setBit(props, 4, p.hideFirstPageFill);
+  props = setBit(props, 5, p.hideFirstPageNumber);
   props = setBit(props, 8, p.showFirstPageBorderOnly);
   props = setBit(props, 9, p.showFirstPageFillOnly);
   props = setBit(props, 19, p.hideEmptyLines);

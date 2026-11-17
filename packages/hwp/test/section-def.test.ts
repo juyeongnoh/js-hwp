@@ -61,6 +61,28 @@ describe('새 문서의 구역 정의', () => {
   })
 })
 
+describe('구역 정의 속성 bit 5 (정오표 69)', () => {
+  const dir = 'docs/experiments/section-bit-5'
+  const read = (name: string) => parseHwp(new Uint8Array(readFileSync(join(root, dir, name))))
+
+  it('첫 쪽 쪽 번호 감추기를 hideFirstPageNumber로 읽는다', () => {
+    expect(read('bit-5-0.hwp').sections[0]!.properties!.hideFirstPageNumber).toBeUndefined()
+    for (const name of ['bit-5-1.hwp', 'resaved-bit-5-1.hwp']) {
+      const props = read(name).sections[0]!.properties!
+      expect(props.hideFirstPageNumber).toBe(true)
+      expect(props.unknownBits).toBeUndefined()
+    }
+  })
+
+  it('필드를 끄고 켜면 속성의 bit 5만 바뀐다', () => {
+    const doc = read('bit-5-1.hwp')
+    doc.sections[0]!.properties!.hideFirstPageNumber = undefined
+    expect(sectionDefs(serializeHwp(doc))[0]![0]!.slice(8, 16)).toBe('00000000')
+    doc.sections[0]!.properties!.hideFirstPageNumber = true
+    expect(sectionDefs(serializeHwp(doc))[0]![0]!.slice(8, 16)).toBe('20000000')
+  })
+})
+
 describe('구역 정의 26B 뒤 영역의 필드 (정오표 64, 70)', () => {
   const read = (path: string) => parseHwp(new Uint8Array(readFileSync(join(root, path))))
   const props = (path: string, index = 0) => read(path).sections[index]!.properties!

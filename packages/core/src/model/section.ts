@@ -162,6 +162,11 @@ export interface SectionProperties {
    */
   hideFirstPageBorder?: boolean
   hideFirstPageFill?: boolean
+  /**
+   * 첫 쪽에서 쪽 번호를 감춘다(bit 5, 정오표 69). 한글 2024 구역 설정 대화상자에는 항목이 없지만
+   * 한글은 이 비트를 읽고 저장할 때도 남긴다(E26).
+   */
+  hideFirstPageNumber?: boolean
   /** 첫 쪽에만 테두리, 배경을 표시한다(bit 8, 9). */
   showFirstPageBorderOnly?: boolean
   showFirstPageFillOnly?: boolean
@@ -169,9 +174,8 @@ export interface SectionProperties {
   hideEmptyLines?: boolean
   pageNumberStart?: PageNumberStart
   /**
-   * 속성에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. bit 5는 첫 쪽에서 쪽 번호를 감추지만
-   * (정오표 69) 한글 구역 설정에 항목이 없어 아직 여기 둔다. 원고지 문서에서 함께 켜지는 bit 22(원고지 정서법)와
-   * 명세에 없는 bit 29도 따로 켜 보지 못해 여기 둔다(정오표 65). 명세가 텍스트 방향이라고 적은
+   * 속성에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. 원고지 문서에서 함께 켜지는 bit 22(원고지 정서법)와
+   * 명세에 없는 bit 29는 따로 켜 보지 못해 여기 둔다(정오표 65). 명세가 텍스트 방향이라고 적은
    * bit 16~18은 쓰이지 않는다. 글자 방향은 {@link trailing}에 있다(정오표 64, E27).
    */
   unknownBits?: number
