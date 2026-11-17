@@ -1,0 +1,41 @@
+# 구역 정의 속성 bit 5는 첫 쪽에서 쪽 번호를 감춘다
+
+명세 표 130은 bit 5를 "쪽 번호 위치 감추기"라고만 적는다. 구역 설정 대화상자에 이 비트를 켜는 항목이 없어(정오표 E23, E25) 한글이 무엇을 하는지 확인하지 못했다. 현재 쪽만 감추기(`pghd`, 표 145)의 0x20(쪽 번호)과 같은 자리라 첫 쪽의 쪽 번호를 감추는 비트로 보였다. 비트만 켠 파일을 한글에서 열어 확인했다.
+
+- 날짜: 2026-11-17
+- 환경: Windows용 한글 2024. 파일 버전 5.1.2.0. 앱 버전은 기록하지 않았다.
+- 기반: `base-page-number.hwp`. 한글 새 문서에 "page one", "page two", "page three"를 쪽 나누기로 나눠 쓰고, 1쪽에서 [쪽] → 쪽 번호 매기기를 기본값(가운데 아래, `- 1 -` 모양)으로 넣어 HWP로 저장했다. 구역 정의 속성은 `0x00000000`이다. `Section0`의 컨트롤은 `secd`, `cold`, `pgnp`다.
+- 바꾼 곳: `BodyText/Section0` 첫 `secd` CTRL_HEADER의 속성(페이로드 오프셋 4)의 bit 5
+
+## 파일
+
+결과는 한글 본문(쪽 윤곽 보기, 세 쪽 나란히)에서 각 쪽 아래의 쪽 번호를 보고 판단했다.
+
+| 파일 | bit 5 | 속성 | 1쪽 | 2쪽 | 3쪽 |
+| --- | --- | --- | --- | --- | --- |
+| `bit-5-0.hwp` | 0 (대조, 다시 쓰기만) | `0x00000000` | `- 1 -` | `- 2 -` | `- 3 -` |
+| `bit-5-1.hwp` | 1 | `0x00000020` | 없음 | `- 2 -` | `- 3 -` |
+| `resaved-bit-5-1.hwp` | — | `0x00000020` | 없음 | `- 2 -` | `- 3 -` |
+
+`resaved-bit-5-1.hwp`는 한글에서 `bit-5-1.hwp`를 열고 구역 설정 대화상자를 연 뒤 아무것도 바꾸지 않고 [설정]을 누르고 다른 이름으로 저장한 파일이다.
+
+- 구역 설정 대화상자의 "기타"에는 첫 쪽에만 머리말/꼬리말, 바탕쪽, 테두리/배경 감추기와 빈 줄 감추기만 있었다. 세 체크박스는 모두 꺼져 있었다. bit 5를 보여 주는 항목은 없었다.
+- [설정]을 누른 뒤에도 1쪽 번호는 감춰진 채였고, 저장한 파일에도 bit 5가 남았다.
+
+## 결론
+
+- bit 5는 구역의 첫 쪽에서 쪽 번호(`pgnp`)를 감춘다. 2쪽부터는 그대로 표시된다. bit 0~4와 같은 "첫 쪽에서 감추기" 묶음이고, 비트 배치가 `pghd`(표 145)와 같다.
+- 한글 2024의 구역 설정 대화상자에는 이 항목이 없다. 한글은 이 비트를 읽고 지키지만, UI로 켜는 방법은 찾지 못했다.
+- 미확인: 머리말·꼬리말에 넣은 쪽 번호 필드(상용구 등)도 감추는지, 인쇄·PDF 출력에서도 감추는지, 구역이 둘 이상일 때 각 구역의 첫 쪽에 적용되는지.
+
+## 재현
+
+저장소 루트에서 실행한다. 작성 시점에 `packages/core/dist`가 깨져 있어 `@js-hwp/core`를 소스로 풀어 주는 tsconfig를 썼다. dist가 정상이면 `--tsconfig` 없이 실행해도 된다.
+
+```bash
+echo '{ "compilerOptions": { "baseUrl": "..", "paths": { "@js-hwp/core": ["packages/core/src/index.ts"] } } }' > scratch/tsconfig.src.json
+npx tsx --tsconfig scratch/tsconfig.src.json docs/experiments/scripts/patch-section-def.ts docs/experiments/section-bit-5/base-page-number.hwp <출력 폴더>/bit-5-0.hwp 5 5 0
+npx tsx --tsconfig scratch/tsconfig.src.json docs/experiments/scripts/patch-section-def.ts docs/experiments/section-bit-5/base-page-number.hwp <출력 폴더>/bit-5-1.hwp 5 5 1
+```
+
+`resaved-bit-5-1.hwp`는 한글에서 손으로 만든 파일이라 다시 생성할 수 없다.
