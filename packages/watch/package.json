@@ -9,7 +9,7 @@
     "hwp-watch": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -b && chmod +x dist/cli.js"
+    "build": "tsc -b && node -e \"require('fs').chmodSync('dist/cli.js', 0o755)\""
   },
   "dependencies": {
     "@js-hwp/hwp": "0.0.2",
