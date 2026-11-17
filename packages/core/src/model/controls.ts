@@ -666,6 +666,11 @@ export interface TabItem {
   type: "tab";
   width?: HwpUnit;
   leader?: LineStyle;
+  /**
+   * 문단 텍스트에서 탭 문자 뒤의 코드 단위 6개. 앞 2개는 폭이고 쓸 때 {@link width}로 덮는다.
+   * 한글은 셋째 코드 단위에 `0x0100`을 쓰지만 뜻은 모른다. 없으면 폭 뒤를 0으로 채운다.
+   */
+  textData?: number[];
 }
 
 /** 부드러운 줄바꿈(Shift+Enter) — 새 문단을 시작하지 않는다. */

@@ -431,7 +431,11 @@ function inlineControlItem(
   switch (code) {
     case CHAR_TAB: {
       const width = view.getUint32((start + 1) * 2, true);
-      return { type: "tab", width: width || undefined };
+      return {
+        type: "tab",
+        width: width || undefined,
+        textData: textData(view, start),
+      };
     }
     case CHAR_TITLE_MARK:
       return { type: "specialChar", char: "titleMark" };
@@ -1249,7 +1253,8 @@ function encodeParagraphText(
   let lastShapeId = -1;
 
   const mark = (code: number): void => {
-    controlMask |= 1 << code;
+    // 1 << 31은 음수라 부호 없는 값으로 되돌린다.
+    controlMask = (controlMask | (1 << code)) >>> 0;
   };
 
   const pushExtended = (code: number, control: Control): void => {
@@ -1303,22 +1308,30 @@ function encodeParagraphText(
           break;
         case "tab": {
           const width = item.width ?? 0;
-          pushInline(CHAR_TAB, [width & 0xffff, (width >>> 16) & 0xffff]);
+          const data = item.textData ? [...item.textData] : [];
+          data[0] = width & 0xffff;
+          data[1] = (width >>> 16) & 0xffff;
+          pushInline(CHAR_TAB, data);
           break;
         }
         case "lineBreak":
           mark(CHAR_LINE_BREAK);
           codes.push(CHAR_LINE_BREAK);
           break;
+        // 한글은 문단에 든 char 컨트롤도 controlMask에 켠다. 0x1F는 저장소 파일에서 확인했고
+        // 0x18, 0x1E는 같은 규칙으로 본다. 0x0D(문단 끝)는 켜지 않는다.
         case "specialChar":
           switch (item.char) {
             case "hyphen":
+              mark(CHAR_HYPHEN);
               codes.push(CHAR_HYPHEN);
               break;
             case "nbsp":
+              mark(CHAR_NBSP);
               codes.push(CHAR_NBSP);
               break;
             case "fixedWidthSpace":
+              mark(CHAR_FIXED_SPACE);
               codes.push(CHAR_FIXED_SPACE);
               break;
             case "titleMark":
