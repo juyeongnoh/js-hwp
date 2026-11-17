@@ -18,6 +18,8 @@
 | `numbering-extended-levels/`  | 수준별 시작번호·8~10수준의 위치, 9·10수준 문단의 수준 저장 위치 |
 | `numbering-start-number-source/` | 시작 번호 UINT16과 1수준 시작번호 중 한글이 표시에 쓰는 값 |
 | `section-bit-5/`              | 구역 정의 속성 bit 5(첫 쪽 쪽 번호 감추기)의 한글 표시          |
+| `section-text-direction/`     | 구역 정의 26B 뒤 영역의 글자 방향 필드 경계와 이웃 비트         |
+| `section-memo-shape-id/`      | 구역 정의 26B 뒤 영역 오프셋 30이 메모 모양 ID인지, 그 길이      |
 | `scripts/`                    | 실험 파일 생성·검사 스크립트 (공용)                             |
 
 새 실험을 추가하면 이 표에 한 줄을 넣는다.
