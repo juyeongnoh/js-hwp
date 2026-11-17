@@ -32,6 +32,7 @@ import {
   PageNumberStart,
   type Section,
   type SectionProperties,
+  TextDirection,
   PageBreakInTable,
   RelativeTo,
   type TableCell,
@@ -724,6 +725,7 @@ function readSectionDefinition(
   const equation = reader.optionalUint16();
   if (reader.hasMore(2)) properties.language = reader.uint16();
   if (reader.hasMore()) properties.trailing = reader.rest();
+  readSectionTrailing(properties);
 
   if (bit(props, 0)) properties.hideFirstHeader = true;
   if (bit(props, 1)) properties.hideFirstFooter = true;
@@ -768,6 +770,43 @@ function readSectionDefinition(
 
   const masterPages = readParagraphLists(node.children, context);
   if (masterPages.length > 0) section.masterPages = masterPages;
+}
+
+/**
+ * 표 129의 26B 뒤 영역(`trailing`)에서 메모 모양 ID(오프셋 4, UINT16)와 오프셋 6의 글자 방향
+ * (bit 1~3), 머리말/꼬리말 세로쓰기(bit 4)를 읽는다(정오표 64, 70, E27, E28).
+ */
+function readSectionTrailing(properties: SectionProperties): void {
+  const trailing = properties.trailing;
+  if (!trailing || trailing.length < 7) return;
+  const memoShapeId = fromIdRef(trailing[4]! | (trailing[5]! << 8));
+  if (memoShapeId !== undefined) properties.memoShapeId = memoShapeId;
+  const textDirection = bits(trailing[6]!, 1, 3);
+  if (textDirection !== TextDirection.Horizontal)
+    properties.textDirection = textDirection;
+  if (bit(trailing[6]!, 4)) properties.verticalHeaderFooter = true;
+}
+
+/**
+ * {@link readSectionTrailing}이 읽는 필드를 `trailing` 사본에 덮어쓴다. `trailing`이 없으면 `length`
+ * 바이트로 만든다. 7바이트보다 짧은 `trailing`은 필드를 쓸 때만 늘린다.
+ */
+function sectionTrailingBytes(p: SectionProperties, length: number): Uint8Array {
+  const source = p.trailing ?? new Uint8Array(length);
+  const hasFields =
+    p.memoShapeId !== undefined ||
+    (p.textDirection ?? TextDirection.Horizontal) !== TextDirection.Horizontal ||
+    p.verticalHeaderFooter === true;
+  if (source.length < 7 && !hasFields) return source;
+  const trailing = new Uint8Array(Math.max(source.length, 7));
+  trailing.set(source);
+  const memoShapeRef = toIdRef(p.memoShapeId, "메모 모양");
+  trailing[4] = memoShapeRef & 0xff;
+  trailing[5] = memoShapeRef >>> 8;
+  let flags = setBits(trailing[6]!, 1, 3, p.textDirection ?? TextDirection.Horizontal);
+  flags = setBit(flags, 4, p.verticalHeaderFooter);
+  trailing[6] = flags;
+  return trailing;
 }
 
 function readPageDef(node: RecordNode): PageDef {
@@ -1672,7 +1711,7 @@ function writeSectionDefinition(
   if (p.language !== undefined || version >= 0x05000105)
     header.uint16(p.language ?? 0);
   // 새 구역의 끝 바이트는 한글이 저장한 길이를 따른다: 5.0.4.0 이상 17B, 그 전 8B(정오표 55).
-  header.bytes(p.trailing ?? new Uint8Array(version >= 0x05000400 ? 17 : 8));
+  header.bytes(sectionTrailingBytes(p, version >= 0x05000400 ? 17 : 8));
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
     const { pageDef } = section;

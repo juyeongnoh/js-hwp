@@ -141,6 +141,15 @@ export enum PageNumberStart {
   User = 3,
 }
 
+/** 구역의 글자 방향(정오표 64, E27). HWPX `textDirection`의 순서와 같다. */
+export enum TextDirection {
+  Horizontal = 0,
+  /** 세로쓰기, 영문 눕힘. */
+  Vertical = 1,
+  /** 세로쓰기, 영문 세움. */
+  VerticalAll = 2,
+}
+
 /** 구역 정의(표 129). 이름 붙인 비트는 한글로 확인한 것뿐이다(정오표 E23, E25). */
 export interface SectionProperties {
   /** 첫 쪽에서 머리말, 꼬리말, 바탕쪽, 테두리, 배경을 감춘다(bit 0~4). */
@@ -163,7 +172,7 @@ export interface SectionProperties {
    * 속성에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. bit 5는 첫 쪽에서 쪽 번호를 감추지만
    * (정오표 69) 한글 구역 설정에 항목이 없어 아직 여기 둔다. 원고지 문서에서 함께 켜지는 bit 22(원고지 정서법)와
    * 명세에 없는 bit 29도 따로 켜 보지 못해 여기 둔다(정오표 65). 명세가 텍스트 방향이라고 적은
-   * bit 16~18은 쓰이지 않는다. 글자 방향은 {@link trailing}에 있다(정오표 64).
+   * bit 16~18은 쓰이지 않는다. 글자 방향은 {@link trailing}에 있다(정오표 64, E27).
    */
   unknownBits?: number
   /** 단 사이 간격. */
@@ -187,9 +196,21 @@ export interface SectionProperties {
   /** 대표 언어(5.0.1.5 이상). 0이면 응용 프로그램의 언어. */
   language?: number
   /**
+   * 문서 정보 메모 모양(MEMO_SHAPE)의 0부터 센 인덱스. 없으면 메모 모양 없음(정오표 70, E28).
+   * 한글은 범위 밖의 값도 없음으로 다룬다.
+   */
+  memoShapeId?: number
+  /**
+   * 글자 방향. 없으면 가로쓰기. 필드는 3비트라 한글이 쓰지 않는 3~7도 들어올 수 있다.
+   * 한글은 그 값을 영문 세움처럼 그린다(E27).
+   */
+  textDirection?: TextDirection
+  /** 머리말/꼬리말에도 세로쓰기를 적용한다. 한글은 가로쓰기일 때도 이 비트를 지우지 않는다(E27). */
+  verticalHeaderFooter?: boolean
+  /**
    * 알려진 필드 뒤의 바이트(5.0.2.5는 8B, 5.0.4.0 이상은 17B). 쓸 때 끝에 그대로 붙인다.
-   * 4번째 바이트부터의 UINT32 bit 16~18이 글자 방향으로 보이지만 필드 경계를 확인하지 않아
-   * 해석하지 않는다(정오표 64).
+   * `trailing[4..5]`(메모 모양 ID)와 `trailing[6]` bit 1~4(글자 방향, 머리말/꼬리말 세로쓰기)는
+   * 위 필드로 읽고, 쓸 때 위 필드 값으로 덮어쓴다(정오표 64, 70).
    */
   trailing?: Uint8Array
 }
