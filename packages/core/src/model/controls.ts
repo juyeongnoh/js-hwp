@@ -551,13 +551,32 @@ export interface FieldBeginControl {
   /** 필드 명령 문자열. 예: 하이퍼링크의 URL. */
   command?: string
   instanceId?: number
+  /** 읽기 전용 상태에서도 수정할 수 있다(표 155 bit 0). */
   editable?: boolean
+  /** 필드 내용이 수정됐다(표 155 bit 15). */
   dirty?: boolean
+  /**
+   * CTRL_HEADER의 ctrlId. 없으면 `fieldKind`로 정한다. 한글은 메모 필드의 CTRL_HEADER에
+   * `%unk`를 쓰고 문단 텍스트에는 `%%me`를 쓴다(정오표 71).
+   */
+  ctrlId?: string
+  /** 속성(표 155)에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. */
+  unknownBits?: number
+  /** 기타 속성 1바이트. */
+  extraProperties?: number
+  /** 고유 아이디 뒤의 바이트. 메모 필드는 MEMO_LIST의 메모 번호(UINT32)를 둔다(정오표 71). */
+  trailing?: Uint8Array
+  /** CTRL_HEADER 아래의 CTRL_DATA 페이로드. 쓸 때 그대로 둔다. */
+  ctrlData?: Uint8Array
+  /** 문단 텍스트에서 필드 시작 문자 뒤의 코드 단위 6개. 없으면 ctrlId와 0으로 채운다. */
+  textData?: number[]
 }
 
 export interface FieldEndControl {
   type: 'fieldEnd'
   id: number
+  /** 문단 텍스트에서 필드 끝 문자 뒤의 코드 단위 6개. 없으면 0으로 채운다. 뜻은 모른다. */
+  textData?: number[]
 }
 
 // ---------------------------------------------------------------------------

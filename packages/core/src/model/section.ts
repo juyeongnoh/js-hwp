@@ -202,6 +202,16 @@ export interface MasterPage extends ListHeaderRest {
   paragraphs: Paragraph[]
 }
 
+/**
+ * 메모 내용. 한글은 문서의 모든 메모를 마지막 구역의 마지막 문단 아래에 MEMO_LIST, LIST_HEADER,
+ * 문단 순서로 모아 둔다(정오표 71). 본문의 메모 자리는 필드 컨트롤이다.
+ */
+export interface Memo extends ListHeaderRest {
+  /** MEMO_LIST 페이로드의 UINT32. 한글은 1부터 차례로 쓴다. */
+  id: number
+  paragraphs: Paragraph[]
+}
+
 export interface Section {
   pageDef: PageDef
   columnDef?: ColumnDef
@@ -211,4 +221,6 @@ export interface Section {
   masterPages?: MasterPage[]
   properties?: SectionProperties
   paragraphs: Paragraph[]
+  /** 이 구역의 마지막 문단 아래에 저장된 메모. 쓸 때도 그 문단 아래에 쓴다. */
+  memos?: Memo[]
 }

@@ -18,8 +18,10 @@
 
 import {
   type Control,
+  FieldKind,
   type HwpDocument,
   type InlineItem,
+  type Memo,
   type LineSegment,
   type Paragraph,
   type RangeTag,
@@ -159,6 +161,11 @@ export function parseSection(doc: HwpDocument, data: Uint8Array): Section {
 
   const section: Section = { pageDef: defaultPageDef(), paragraphs: [] };
   section.paragraphs = readParagraphList(tree, context, section);
+  const lastParagraph = tree
+    .filter((node) => node.tagId === SectionTag.ParaHeader)
+    .at(-1);
+  const memos = lastParagraph ? readMemos(lastParagraph, context) : [];
+  if (memos.length > 0) section.memos = memos;
   if (section.paragraphs.length === 0) {
     section.paragraphs.push({
       paraShapeId: 0,
@@ -356,6 +363,13 @@ function readParaText(
       const control = node ? readControl(node, context, section) : undefined;
       // 모르는 컨트롤은 텍스트의 제어 문자도 원본대로 다시 쓴다.
       if (control?.type === "unknown") control.charCode = code;
+      // 필드는 텍스트 쪽 ctrlId가 CTRL_HEADER와 다를 수 있다(정오표 71).
+      if (control?.type === "fieldBegin") {
+        control.textData = textData(view, start);
+        const kind = FIELD_KIND_BY_CTRL_ID[readCtrlId(view.getUint32((start + 1) * 2, true))];
+        if (control.fieldKind === FieldKind.Unknown && kind !== undefined)
+          control.fieldKind = kind;
+      }
       if (control) items.push({ position: start, item: control });
       continue;
     }
@@ -399,11 +413,20 @@ function inlineControlItem(
       return { type: "specialChar", char: "titleMark" };
     case CHAR_FIELD_END: {
       const id = context.fieldStack.pop();
-      return id === undefined ? undefined : { type: "fieldEnd", id };
+      return id === undefined
+        ? undefined
+        : { type: "fieldEnd", id, textData: textData(view, start) };
     }
     default:
       return undefined;
   }
+}
+
+/** 인라인·확장 컨트롤 문자 뒤의 코드 단위 6개. */
+function textData(view: DataView, start: number): number[] {
+  return Array.from({ length: 6 }, (_, i) =>
+    view.getUint16((start + 1 + i) * 2, true),
+  );
 }
 
 function readControl(
@@ -481,25 +504,48 @@ function readField(
   reader: ByteReader,
   context: ParseContext,
 ): Control {
+  // 표 154: 속성 4B, 기타 속성 1B, 명령 길이 2B + WCHAR, 고유 아이디 4B. 그 뒤 바이트는 보존한다.
   const properties = reader.optionalUint32();
-  reader.optionalUint8(); // reserved
+  const extraProperties = reader.optionalUint8();
+  const command = reader.optionalString();
   const instanceId = reader.optionalUint32();
 
   const id = context.nextFieldId++;
   context.fieldStack.push(id);
 
-  // 명령 문자열은 뒤따르는 CTRL_DATA / 파라미터 블록에 있다.
-  const dataNode = childWithTag(node, SectionTag.CtrlData);
-  const command = dataNode ? readFieldCommand(dataNode) : undefined;
-
-  return {
+  const control: Extract<Control, { type: "fieldBegin" }> = {
     type: "fieldBegin",
-    fieldKind: FIELD_KIND_BY_CTRL_ID[ctrlId] ?? 0,
+    fieldKind: FIELD_KIND_BY_CTRL_ID[ctrlId] ?? FieldKind.Unknown,
     id,
-    command,
-    instanceId,
-    dirty: bit(properties, 0),
+    ctrlId,
   };
+  if (command) control.command = command;
+  if (instanceId) control.instanceId = instanceId;
+  if (bit(properties, 0)) control.editable = true;
+  if (bit(properties, 15)) control.dirty = true;
+  const unknownBits = (properties & ~FIELD_KNOWN) >>> 0;
+  if (unknownBits) control.unknownBits = unknownBits;
+  if (extraProperties) control.extraProperties = extraProperties;
+  if (reader.hasMore()) control.trailing = reader.rest();
+  const dataNode = childWithTag(node, SectionTag.CtrlData);
+  if (dataNode) control.ctrlData = dataNode.payload;
+  return control;
+}
+
+/** 표 155에서 모델이 이름으로 다루는 비트: 0(수정 가능), 15(수정됨). */
+const FIELD_KNOWN = 0x8001;
+
+/** 읽은 ctrlId가 있으면 그것을, 없으면 필드 종류의 ctrlId를 쓴다. 모르는 종류는 하이퍼링크다. */
+function fieldCtrlId(
+  control: Extract<Control, { type: "fieldBegin" }>,
+): string {
+  return (
+    control.ctrlId ??
+    Object.entries(FIELD_KIND_BY_CTRL_ID).find(
+      ([, kind]) => kind === control.fieldKind,
+    )?.[0] ??
+    CtrlId.FieldHyperlink
+  );
 }
 
 const FIELD_KIND_BY_CTRL_ID: Record<string, number> = {
@@ -518,12 +564,6 @@ const FIELD_KIND_BY_CTRL_ID: Record<string, number> = {
   [CtrlId.FieldPrivateInfo]: 23,
   [CtrlId.FieldTableOfContents]: 24,
 };
-
-function readFieldCommand(node: RecordNode): string | undefined {
-  const reader = new ByteReader(node.payload);
-  const value = reader.optionalString();
-  return value === "" ? undefined : value;
-}
 
 function readBookmarkName(node: RecordNode): string {
   const dataNode = childWithTag(node, SectionTag.CtrlData);
@@ -569,6 +609,31 @@ function readParagraphLists(
     }
   }
   return lists;
+}
+
+/**
+ * 문단 아래의 메모. MEMO_LIST(4B)마다 뒤따르는 LIST_HEADER와 형제 문단이 메모 하나다(정오표 71).
+ */
+function readMemos(paragraph: RecordNode, context: ParseContext): Memo[] {
+  const memos: Memo[] = [];
+  const children = paragraph.children;
+  children.forEach((child, index) => {
+    if (child.tagId !== SectionTag.MemoList) return;
+    const end = children.findIndex(
+      (next, i) => i > index && next.tagId === SectionTag.MemoList,
+    );
+    const [list] = readParagraphLists(
+      children.slice(index + 1, end === -1 ? undefined : end),
+      context,
+    );
+    const memo: Memo = {
+      id: new ByteReader(child.payload).optionalUint32(),
+      paragraphs: list?.paragraphs ?? [],
+    };
+    if (list?.listHeaderRest) memo.listHeaderRest = list.listHeaderRest;
+    memos.push(memo);
+  });
+  return memos;
 }
 
 /** 컨트롤 하나에 딸린 문단 리스트. 문단이 없으면 빈 문단 하나를 둔다. */
@@ -1077,12 +1142,15 @@ export function serializeSection(
 ): Uint8Array {
   const writer = new RecordWriter();
   section.paragraphs.forEach((paragraph, index) => {
+    const last = index === section.paragraphs.length - 1;
     writeParagraph(
       writer,
       doc,
       paragraph,
       index === 0 && isFirst ? section : undefined,
-      index === section.paragraphs.length - 1,
+      last,
+      undefined,
+      last ? section.memos : undefined,
     );
   });
   return writer.finish();
@@ -1116,7 +1184,13 @@ function encodeParagraphText(
     mark(code);
     extended.push({ control });
     const id = writeCtrlId(ctrlIdFor(control));
-    codes.push(code, id & 0xffff, id >>> 16, 0, 0, 0, 0, code);
+    const data =
+      control.type === "fieldBegin" && control.textData
+        ? control.textData
+        : [id & 0xffff, id >>> 16];
+    codes.push(code);
+    for (let i = 0; i < 6; i++) codes.push(data[i] ?? 0);
+    codes.push(code);
   };
 
   const pushInline = (code: number, payload: number[] = []): void => {
@@ -1184,7 +1258,7 @@ function encodeParagraphText(
         case "columnBreak":
           break;
         case "fieldEnd":
-          pushInline(CHAR_FIELD_END);
+          pushInline(CHAR_FIELD_END, item.textData);
           break;
         default:
           pushExtended(controlCharFor(item), item);
@@ -1229,11 +1303,7 @@ function ctrlIdFor(control: Control): string {
     case "autoNumber":
       return CtrlId.AutoNumber;
     case "fieldBegin":
-      return (
-        Object.entries(FIELD_KIND_BY_CTRL_ID).find(
-          ([, kind]) => kind === control.fieldKind,
-        )?.[0] ?? CtrlId.FieldHyperlink
-      );
+      return fieldCtrlId(control);
     case "unknown":
       return control.ctrlId;
     default:
@@ -1293,6 +1363,7 @@ function writeParagraph(
   sectionForDefinition?: Section,
   lastInList = false,
   cellWidth?: number,
+  memos?: Memo[],
 ): void {
   const encoded = encodeParagraphText(paragraph, sectionForDefinition);
   const table = paragraph.runs
@@ -1387,6 +1458,12 @@ function writeParagraph(
     for (const { control } of encoded.extended) {
       writeControl(writer, doc, control, sectionForDefinition);
     }
+
+    // 한글은 메모를 컨트롤 뒤에 둔다(정오표 71).
+    for (const memo of memos ?? []) {
+      writer.write(SectionTag.MemoList, new ByteWriter().uint32(memo.id));
+      writeNestedParagraphs(writer, doc, memo);
+    }
   });
 }
 
@@ -1472,22 +1549,18 @@ function writeControl(
       return;
     }
     case "fieldBegin": {
-      const ctrlId =
-        Object.entries(FIELD_KIND_BY_CTRL_ID).find(
-          ([, kind]) => kind === control.fieldKind,
-        )?.[0] ?? CtrlId.FieldHyperlink;
+      let props = (control.unknownBits ?? 0) & ~FIELD_KNOWN;
+      props = setBit(props, 0, control.editable);
+      props = setBit(props, 15, control.dirty);
       const header = new ByteWriter()
-        .uint32(writeCtrlId(ctrlId))
-        .uint32(0)
-        .uint8(0)
+        .uint32(writeCtrlId(fieldCtrlId(control)))
+        .uint32(props)
+        .uint8(control.extraProperties ?? 0)
+        .string(control.command ?? "")
         .uint32(control.instanceId ?? 0);
+      if (control.trailing) header.bytes(control.trailing);
       writer.nested(SectionTag.CtrlHeader, header, () => {
-        if (control.command) {
-          writer.write(
-            SectionTag.CtrlData,
-            new ByteWriter().string(control.command),
-          );
-        }
+        if (control.ctrlData) writer.write(SectionTag.CtrlData, control.ctrlData);
       });
       return;
     }
