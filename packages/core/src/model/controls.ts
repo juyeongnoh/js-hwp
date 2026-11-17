@@ -690,4 +690,40 @@ export interface Paragraph {
   id?: number
   /** 변경 추적 병합 문단 여부(UINT16, 5.0.3.2+). 뜻을 다 알지 못해 값 그대로 둔다. 0이면 생략. */
   trackChangeMerged?: number
+  /**
+   * 한글이 마지막으로 조판한 줄 배치 캐시. 읽은 그대로 다시 쓴다.
+   * 없으면(새로 만든 문단) 코덱이 필요한 경우에만 만들어 쓴다. 텍스트를 고쳐도 갱신하지 않는다.
+   */
+  lineSegments?: LineSegment[]
+  /** 텍스트 구간 표시(형광펜, 교정 부호 등). 구간끼리 겹칠 수 있다. */
+  rangeTags?: RangeTag[]
+}
+
+/** 줄 배치 캐시 한 칸(줄 하나, 또는 줄 안의 세그먼트 하나). 길이는 HWPUNIT. */
+export interface LineSegment {
+  /** 이 줄이 시작하는 글자 위치. */
+  textStart: number
+  /** 줄의 세로 위치. */
+  y: number
+  height: number
+  textHeight: number
+  /** 줄의 세로 위치에서 베이스라인까지 거리. */
+  baselineGap: number
+  lineSpacing: number
+  /** 단 안에서의 시작 위치. */
+  x: number
+  width: number
+  /** 쪽/단 첫 줄, 빈 세그먼트 등 조판 표시 비트. 값 그대로 둔다. */
+  flags: number
+}
+
+export interface RangeTag {
+  /** 구간 시작 글자 위치. */
+  start: number
+  /** 구간 끝 글자 위치. */
+  end: number
+  /** 종류(0~255). */
+  kind: number
+  /** 종류별 데이터(24비트). */
+  data: number
 }

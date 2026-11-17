@@ -20,7 +20,9 @@ import {
   type Control,
   type HwpDocument,
   type InlineItem,
+  type LineSegment,
   type Paragraph,
+  type RangeTag,
   type Run,
   type Section,
   PageBreakInTable,
@@ -34,6 +36,7 @@ import {
 import {
   ByteReader,
   ByteWriter,
+  HwpFormatError,
   bit,
   bits,
   setBit,
@@ -205,6 +208,8 @@ function readParagraph(
 
   const textRecord = childWithTag(node, SectionTag.ParaText);
   const charShapeRecord = childWithTag(node, SectionTag.ParaCharShape);
+  const lineSegRecord = childWithTag(node, SectionTag.ParaLineSeg);
+  const rangeTagRecord = childWithTag(node, SectionTag.ParaRangeTag);
   const controlNodes = node.children.filter(
     (child) => child.tagId === SectionTag.CtrlHeader,
   );
@@ -223,7 +228,43 @@ function readParagraph(
   paragraph.runs = buildRuns(items, charShapes);
   if (paragraph.runs.length === 0)
     paragraph.runs.push({ charShapeId: 0, items: [] });
+  // 레코드가 없어도 빈 배열로 둔다. 쓸 때 줄 배치를 새로 만들지 않고 없던 그대로 쓰게 한다.
+  paragraph.lineSegments = lineSegRecord ? readParaLineSeg(lineSegRecord) : [];
+  if (rangeTagRecord) paragraph.rangeTags = readParaRangeTag(rangeTagRecord);
   return paragraph;
+}
+
+/** 표 62. 36바이트 항목이 문단 머리의 줄 정보 수만큼 이어진다. */
+function readParaLineSeg(node: RecordNode): LineSegment[] {
+  const reader = new ByteReader(node.payload);
+  const out: LineSegment[] = [];
+  while (reader.hasMore(36)) {
+    out.push({
+      textStart: reader.uint32(),
+      y: reader.int32(),
+      height: reader.int32(),
+      textHeight: reader.int32(),
+      baselineGap: reader.int32(),
+      lineSpacing: reader.int32(),
+      x: reader.int32(),
+      width: reader.int32(),
+      flags: reader.uint32(),
+    });
+  }
+  return out;
+}
+
+/** 표 63. 12바이트 항목. 태그의 상위 8비트가 종류, 하위 24비트가 데이터. */
+function readParaRangeTag(node: RecordNode): RangeTag[] {
+  const reader = new ByteReader(node.payload);
+  const out: RangeTag[] = [];
+  while (reader.hasMore(12)) {
+    const start = reader.uint32();
+    const end = reader.uint32();
+    const tag = reader.uint32();
+    out.push({ start, end, kind: tag >>> 24, data: tag & 0xffffff });
+  }
+  return out;
 }
 
 function readParaCharShape(
@@ -1008,7 +1049,13 @@ function writeParagraph(
   const table = paragraph.runs
     .flatMap((run) => run.items)
     .find((item) => item.type === "table");
-  const hasLineSegment = table !== undefined || cellWidth !== undefined;
+  // 읽은 문단은 원본 줄 배치를 그대로, 새 문단은 표·셀에만 한 줄짜리를 만든다.
+  const lineSegments =
+    paragraph.lineSegments ??
+    (table !== undefined || cellWidth !== undefined
+      ? [defaultLineSegment(table?.placement.height, cellWidth)]
+      : []);
+  const rangeTags = paragraph.rangeTags ?? [];
 
   const header = new ByteWriter();
   // 비트 31은 이 문단이 현재 문단 리스트의 마지막임을 표시한다.
@@ -1025,8 +1072,8 @@ function writeParagraph(
   header.uint8(divideSort);
 
   header.uint16(encoded.charShapes.length);
-  header.uint16(0); // range tag count
-  header.uint16(hasLineSegment ? 1 : 0);
+  header.uint16(rangeTags.length);
+  header.uint16(lineSegments.length);
   header.uint32(paragraph.id ?? 0);
   // 5.0.3.2 이전 파일은 이 필드 없이 22바이트로 쓴다. 샘플의 5.0.2.5 파일 15개가 모두 그렇다.
   if (versionNumber(doc.version) >= 0x05000302) {
@@ -1049,27 +1096,58 @@ function writeParagraph(
     }
     writer.write(SectionTag.ParaCharShape, shapes);
 
-    if (hasLineSegment) {
-      const lineHeight = table?.placement.height ?? 1300;
-      writer.write(
-        SectionTag.ParaLineSeg,
-        new ByteWriter()
-          .uint32(0)
-          .int32(0)
-          .int32(lineHeight)
-          .int32(lineHeight)
-          .int32(table ? lineHeight : 1100)
-          .int32(table ? 600 : 780)
-          .int32(0)
-          .int32(cellWidth ?? 0)
-          .uint32(0x00060000),
-      );
+    // 순서는 태그 번호 순(표 57)이고 한글 파일도 같다: 글자 모양, 줄 배치, 영역 태그, 컨트롤.
+    // 샘플에 영역 태그를 가진 파일은 없어 그 위치는 태그 번호 순서로만 정했다.
+    if (lineSegments.length > 0) {
+      const segs = new ByteWriter();
+      for (const seg of lineSegments) {
+        segs
+          .uint32(seg.textStart)
+          .int32(seg.y)
+          .int32(seg.height)
+          .int32(seg.textHeight)
+          .int32(seg.baselineGap)
+          .int32(seg.lineSpacing)
+          .int32(seg.x)
+          .int32(seg.width)
+          .uint32(seg.flags);
+      }
+      writer.write(SectionTag.ParaLineSeg, segs);
+    }
+
+    if (rangeTags.length > 0) {
+      const tags = new ByteWriter();
+      for (const tag of rangeTags) {
+        if (tag.kind < 0 || tag.kind > 0xff || tag.data < 0 || tag.data > 0xffffff)
+          throw new HwpFormatError(`영역 태그 종류는 0~255, 데이터는 24비트여야 합니다: ${tag.kind}, ${tag.data}`);
+        tags.uint32(tag.start).uint32(tag.end).uint32(((tag.kind << 24) | tag.data) >>> 0);
+      }
+      writer.write(SectionTag.ParaRangeTag, tags);
     }
 
     for (const { control } of encoded.extended) {
       writeControl(writer, doc, control, sectionForDefinition);
     }
   });
+}
+
+/** 새로 만든 표 문단·셀 문단에 넣던 한 줄짜리 줄 배치. 값은 이전 쓰기 코드 그대로다. */
+function defaultLineSegment(
+  tableHeight: number | undefined,
+  cellWidth: number | undefined,
+): LineSegment {
+  const height = tableHeight ?? 1300;
+  return {
+    textStart: 0,
+    y: 0,
+    height,
+    textHeight: height,
+    baselineGap: tableHeight !== undefined ? height : 1100,
+    lineSpacing: tableHeight !== undefined ? 600 : 780,
+    x: 0,
+    width: cellWidth ?? 0,
+    flags: 0x00060000,
+  };
 }
 
 function writeControl(
