@@ -30,12 +30,11 @@
 
 ## 재현
 
-저장소 루트에서 실행한다. 작성 시점에 `packages/core/dist`가 깨져 있어 `@js-hwp/core`를 소스로 풀어 주는 tsconfig를 썼다. dist가 정상이면 `--tsconfig` 없이 실행해도 된다.
+저장소 루트에서 실행한다.
 
 ```bash
-echo '{ "compilerOptions": { "baseUrl": "..", "paths": { "@js-hwp/core": ["packages/core/src/index.ts"] } } }' > scratch/tsconfig.src.json
-npx tsx --tsconfig scratch/tsconfig.src.json docs/experiments/scripts/patch-section-def.ts docs/experiments/section-bit-5/base-page-number.hwp <출력 폴더>/bit-5-0.hwp 5 5 0
-npx tsx --tsconfig scratch/tsconfig.src.json docs/experiments/scripts/patch-section-def.ts docs/experiments/section-bit-5/base-page-number.hwp <출력 폴더>/bit-5-1.hwp 5 5 1
+npx tsx docs/experiments/scripts/patch-section-def.ts docs/experiments/section-bit-5/base-page-number.hwp <출력 폴더>/bit-5-0.hwp 5 5 0
+npx tsx docs/experiments/scripts/patch-section-def.ts docs/experiments/section-bit-5/base-page-number.hwp <출력 폴더>/bit-5-1.hwp 5 5 1
 ```
 
-`resaved-bit-5-1.hwp`는 한글에서 손으로 만든 파일이라 다시 생성할 수 없다.
+2026-11-17에 이 폴더의 기반 파일로 다시 생성해 `bit-5-0.hwp`, `bit-5-1.hwp`와 바이트가 같음을 확인했다. `resaved-bit-5-1.hwp`는 한글에서 손으로 만든 파일이라 다시 생성할 수 없다.
