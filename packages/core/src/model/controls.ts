@@ -762,6 +762,16 @@ export interface Paragraph {
   lineSegments?: LineSegment[];
   /** 텍스트 구간 표시(형광펜, 교정 부호 등). 구간끼리 겹칠 수 있다. */
   rangeTags?: RangeTag[];
+  /**
+   * 문단 끝 글자(0x0D)의 글자 모양. 마지막 run과 다를 때만 둔다. 한글은 문단 끝에 글자 모양을
+   * 따로 붙이기도 한다. 빈 문단은 이 필드 대신 유일한 run의 `charShapeId`가 문단 끝 글자 모양이다.
+   */
+  paraEndCharShapeId?: number;
+  /**
+   * 구역 첫 문단에서 구역 정의·단 정의 컨트롤 자리의 글자 모양. 첫 run과 다를 때만 둔다.
+   * 쓸 때 이 자리는 코덱이 만들므로 run이 아닌 이 필드로 보존한다.
+   */
+  sectionControlCharShapeId?: number;
 }
 
 /** 줄 배치 캐시 한 칸(줄 하나, 또는 줄 안의 세그먼트 하나). 길이는 HWPUNIT. */

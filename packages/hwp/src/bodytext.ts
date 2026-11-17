@@ -243,8 +243,23 @@ function readParagraph(
     : [];
 
   paragraph.runs = buildRuns(items, charShapes);
-  if (paragraph.runs.length === 0)
-    paragraph.runs.push({ charShapeId: 0, items: [] });
+  // 문단 끝 글자(0x0D)는 아이템이 없으므로 그 자리의 글자 모양을 따로 둔다. 빈 문단은 run이 맡는다.
+  const paraEndShapeId = charShapeAt(charShapes, charCount - 1);
+  const lastRun = paragraph.runs[paragraph.runs.length - 1];
+  if (!lastRun) paragraph.runs.push({ charShapeId: paraEndShapeId, items: [] });
+  else if (lastRun.charShapeId !== paraEndShapeId)
+    paragraph.paraEndCharShapeId = paraEndShapeId;
+  // 구역 첫 문단의 secd·cold 자리(위치 0)도 아이템이 없다.
+  const hasSectionDefinition = controlNodes.some(
+    (child) =>
+      readCtrlId(new ByteReader(child.payload).uint32()) ===
+      CtrlId.SectionDefinition,
+  );
+  if (hasSectionDefinition) {
+    const sectionShapeId = charShapeAt(charShapes, 0);
+    if (sectionShapeId !== paragraph.runs[0]!.charShapeId)
+      paragraph.sectionControlCharShapeId = sectionShapeId;
+  }
   // 레코드가 없어도 빈 배열로 둔다. 쓸 때 줄 배치를 새로 만들지 않고 없던 그대로 쓰게 한다.
   paragraph.lineSegments = lineSegRecord ? readParaLineSeg(lineSegRecord) : [];
   if (rangeTagRecord) paragraph.rangeTags = readParaRangeTag(rangeTagRecord);
@@ -1152,18 +1167,25 @@ function readObjectPlacement(
 }
 
 /** 글자 모양 맵을 써서 위치가 정해진 항목들을 run으로 묶는다. */
+/** 글자 모양 맵에서 `position` 글자에 적용되는 글자 모양. */
+function charShapeAt(
+  charShapes: { position: number; charShapeId: number }[],
+  position: number,
+): number {
+  let current = charShapes[0]?.charShapeId ?? 0;
+  for (const entry of charShapes) {
+    if (entry.position > position) break;
+    current = entry.charShapeId;
+  }
+  return current;
+}
+
 function buildRuns(
   items: PositionedItem[],
   charShapes: { position: number; charShapeId: number }[],
 ): Run[] {
-  const shapeAt = (position: number): number => {
-    let current = charShapes[0]?.charShapeId ?? 0;
-    for (const entry of charShapes) {
-      if (entry.position > position) break;
-      current = entry.charShapeId;
-    }
-    return current;
-  };
+  const shapeAt = (position: number): number =>
+    charShapeAt(charShapes, position);
 
   const runs: Run[] = [];
   for (const { position, item } of items) {
@@ -1290,7 +1312,10 @@ function encodeParagraphText(
     });
     const columnId = writeCtrlId(CtrlId.ColumnDefinition);
     codes.push(0x02, columnId & 0xffff, columnId >>> 16, 0, 0, 0, 0, 0x02);
-    const firstCharShapeId = paragraph.runs[0]?.charShapeId ?? 0;
+    const firstCharShapeId =
+      paragraph.sectionControlCharShapeId ??
+      paragraph.runs[0]?.charShapeId ??
+      0;
     charShapes.push({ position: 0, charShapeId: firstCharShapeId });
     lastShapeId = firstCharShapeId;
   }
@@ -1358,6 +1383,11 @@ function encodeParagraphText(
       charShapeId: paragraph.runs[0]?.charShapeId ?? 0,
     });
   }
+
+  // 문단 끝 글자에 글자 모양이 따로 있으면 그 자리에서 바꾼다.
+  const paraEndShapeId = paragraph.paraEndCharShapeId;
+  if (paraEndShapeId !== undefined && paraEndShapeId !== lastShapeId)
+    charShapes.push({ position: codes.length, charShapeId: paraEndShapeId });
 
   // HWP 문단의 문자 수와 PARA_TEXT에는 끝의 PARA_BREAK도 포함된다.
   codes.push(CHAR_PARA_BREAK);

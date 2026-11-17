@@ -48,10 +48,82 @@ function paragraphs(bytes: Uint8Array): string[] {
   return out
 }
 
+/**
+ * 문단마다 PARA_HEADER 전체와 PARA_CHAR_SHAPE 항목. 같은 위치에 겹친 항목은 마지막 것만 적용되므로
+ * 그것만 남기고, 헤더의 글자 모양 수(오프셋 12)도 그 개수로 맞춘다(`scratch/ul2-vs-strike.hwp`).
+ */
+function paragraphHeads(bytes: Uint8Array): string[] {
+  const c = CFB.read(bytes, { type: 'buffer' })
+  const header = CFB.find(c, 'FileHeader')!.content as Uint8Array
+  const compressed = (header[36]! & 1) === 1
+  const out: string[] = []
+  const walk = (n: RecordNode): void => {
+    if (n.tagId === SectionTag.ParaHeader) {
+      const record = n.children.find((child) => child.tagId === SectionTag.ParaCharShape)
+      const shapes = new Map<number, number>()
+      if (record) {
+        const view = new DataView(record.payload.buffer, record.payload.byteOffset, record.payload.byteLength)
+        for (let i = 0; i + 8 <= view.byteLength; i += 8) shapes.set(view.getUint32(i, true), view.getUint32(i + 4, true))
+      }
+      const head = Buffer.from(n.payload)
+      head.writeUInt16LE(shapes.size, 12)
+      out.push(`${head.toString('hex')}:${[...shapes].map(([p, id]) => `${p}=${id}`).join(',')}`)
+    }
+    n.children.forEach(walk)
+  }
+  for (const p of c.FullPaths.filter((p) => /BodyText\/Section\d+$/.test(p))) {
+    const data = new Uint8Array(CFB.find(c, p.replace(/^[^/]*/, ''))!.content as Uint8Array)
+    buildRecordTree(parseRecords(maybeInflate(data, compressed))).forEach(walk)
+  }
+  return out
+}
+
 describe('저장소 HWP 파일의 문단 텍스트 왕복', () => {
   it.each(files.map((f) => [f.slice(root.length + 1), f]))('%s', (_, file) => {
     const bytes = new Uint8Array(readFileSync(file))
     expect(paragraphs(serializeHwp(parseHwp(bytes)))).toEqual(paragraphs(bytes))
+  })
+})
+
+describe('저장소 HWP 파일의 문단 헤더와 글자 모양 왕복', () => {
+  it.each(files.map((f) => [f.slice(root.length + 1), f]))('%s', (_, file) => {
+    const bytes = new Uint8Array(readFileSync(file))
+    expect(paragraphHeads(serializeHwp(parseHwp(bytes)))).toEqual(paragraphHeads(bytes))
+  })
+})
+
+describe('문단 끝과 구역 정의 자리의 글자 모양', () => {
+  const read = (path: string) => parseHwp(new Uint8Array(readFileSync(join(root, path))))
+
+  const gyeonggi = 'fixtures/kogl_hwp/1.경기도민＋79％＋올＋추석＋고향방문＋계획＋‘없다’(1).hwp'
+
+  it('빈 문단은 문단 끝 글자 모양을 run으로 읽는다', () => {
+    // 원본 PARA_CHAR_SHAPE [0:10]
+    const paragraph = read(gyeonggi).sections[0]!.paragraphs[12]!
+    expect(paragraph.runs).toEqual([{ charShapeId: 10, items: [] }])
+    expect(paragraph.paraEndCharShapeId).toBeUndefined()
+  })
+
+  it('마지막 run과 다른 문단 끝 글자 모양을 paraEndCharShapeId로 읽는다', () => {
+    // 원본 PARA_CHAR_SHAPE [0:7, 32:21], 문자 수 33
+    const paragraph = read(gyeonggi).sections[0]!.paragraphs[0]!
+    expect(paragraph.runs.map((run) => run.charShapeId)).toEqual([7])
+    expect(paragraph.paraEndCharShapeId).toBe(21)
+  })
+
+  it('구역 정의 자리의 글자 모양을 sectionControlCharShapeId로 읽는다', () => {
+    // 원본 PARA_CHAR_SHAPE [0:4, 16:5]
+    const paragraph = read('fixtures/kogl_hwp/2015 생활체육 수기공모전 제출양식.hwp').sections[0]!.paragraphs[0]!
+    expect(paragraph.sectionControlCharShapeId).toBe(4)
+    expect(paragraph.runs[0]!.charShapeId).toBe(5)
+  })
+
+  it('새 문단에 paraEndCharShapeId를 주면 문단 끝 위치에 글자 모양을 쓴다', () => {
+    const doc = new DocumentBuilder().paragraph('가').build()
+    doc.sections[0]!.paragraphs[0]!.paraEndCharShapeId = 3
+    const [entry] = paragraphHeads(serializeHwp(doc))
+    // secd·cold 16칸 + 가 = 문단 끝은 위치 17
+    expect(entry!.split(':')[1]).toBe('0=0,17=3')
   })
 })
 
