@@ -384,14 +384,28 @@ export enum HeaderFooterApplyTo {
   Odd = 2,
 }
 
-export interface HeaderFooterControl {
+/**
+ * 문단 리스트를 가진 컨트롤이 LIST_HEADER에서 모델이 해석하지 않는 바이트.
+ * 문단 수(2바이트) 뒤의 바이트이고, 쓸 때 문단 수 뒤에 그대로 붙인다.
+ */
+export interface ListHeaderRest {
+  listHeaderRest?: Uint8Array
+}
+
+export interface HeaderFooterControl extends ListHeaderRest {
   type: 'header' | 'footer'
   applyTo: HeaderFooterApplyTo
+  /** 속성(표 141)에서 모델이 해석하지 않는 비트(bit 2 이상). 한글은 쓰레기 값을 쓰기도 한다. */
+  unknownBits?: number
+  /** CTRL_HEADER에서 속성 뒤의 바이트. 한글은 4바이트를 더 쓴다. */
+  trailing?: Uint8Array
   paragraphs: Paragraph[]
 }
 
-export interface NoteControl {
+export interface NoteControl extends ListHeaderRest {
   type: 'footnote' | 'endnote'
+  /** CTRL_HEADER에서 ctrlId 뒤의 바이트. 명세는 8바이트를 쓴다고 적는다(4.3.10.4). */
+  trailing?: Uint8Array
   paragraphs: Paragraph[]
   /** 자동 번호 대신 쓰는 명시적 표시. */
   customMark?: string
@@ -413,15 +427,22 @@ export enum AutoNumberKind {
   TotalPage = 6,
 }
 
+/** 자동 번호(표 142). 비트의 뜻은 명세(표 143)를 따랐고 한글로 확인하지 않았다. */
 export interface AutoNumberControl {
   type: 'autoNumber'
   numberKind: AutoNumberKind
   numberFormat: NumberFormat
+  /** 번호. 한글은 1을 쓴다. */
+  number?: number
+  /** 번호 모양이 사용자 지정 문자일 때의 문자. */
+  userChar?: string
   /** 번호 앞뒤에 놓는 텍스트. 예: `- 3 -`을 만드는 `-` `-`. */
   prefix?: string
   suffix?: string
   /** 각주 표시가 기본으로 받는 위 첨자 서식을 끈다. */
   supscript?: boolean
+  /** 속성에서 모델이 해석하지 않는 비트(bit 13 이상). 쓸 때 OR로 합친다. */
+  unknownBits?: number
 }
 
 export interface NewNumberControl {
@@ -565,8 +586,10 @@ export interface ComposeControl {
 }
 
 /** 숨은 설명. */
-export interface HiddenCommentControl {
+export interface HiddenCommentControl extends ListHeaderRest {
   type: 'hiddenComment'
+  /** CTRL_HEADER에서 ctrlId 뒤의 바이트. */
+  trailing?: Uint8Array
   paragraphs: Paragraph[]
 }
 
@@ -593,6 +616,8 @@ export interface UnknownControl {
   ctrlId: string
   /** 라이터가 그대로 다시 내보낼 수 있도록 남긴 원시 레코드 페이로드. */
   raw?: Uint8Array
+  /** 텍스트에서 이 컨트롤을 가리키는 제어 문자. 없으면 11(그리기 개체)로 쓴다. */
+  charCode?: number
   placement?: ObjectPlacement
 }
 

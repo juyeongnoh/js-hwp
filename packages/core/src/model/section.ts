@@ -5,7 +5,7 @@
 import type { Rgb } from './color.js'
 import type { NumberFormat } from './docinfo.js'
 import type { LineStyle } from './docinfo.js'
-import type { Paragraph } from './controls.js'
+import type { ListHeaderRest, Paragraph } from './controls.js'
 import type { HalfHwpUnit, HwpUnit } from './units.js'
 
 export interface PageMargins {
@@ -105,13 +105,13 @@ export interface NoteShape {
 }
 
 /**
- * 쪽 테두리/배경(표 135). 한글은 구역마다 세 개를 저장한다. 속성 비트의 뜻은 명세(표 136)를
- * 따랐고 한글로 확인하지 않았다.
+ * 쪽 테두리/배경(표 135). 한글은 구역마다 양쪽, 짝수 쪽, 홀수 쪽 순서로 세 개를 저장한다.
+ * 속성 비트 0~4는 한글로 확인했다(정오표 66, 67).
  */
 export interface PageBorderFill {
-  /** 테두리를 텍스트 영역이 아니라 용지 가장자리에서 잰다. */
-  fromPaperEdge?: boolean
-  /** 머리말 / 꼬리말을 테두리 안에 포함한다. */
+  /** 위치를 쪽 기준으로 잰다. 아니면 종이 기준이다. 명세 표 136과 반대다(정오표 66). */
+  relativeToPage?: boolean
+  /** 머리말 / 꼬리말을 테두리 안에 포함한다. 쪽 기준일 때만 고를 수 있다. */
   includeHeader?: boolean
   includeFooter?: boolean
   /** 채울 영역: 0 = 종이, 1 = 쪽, 2 = 테두리. */
@@ -182,12 +182,21 @@ export interface SectionProperties {
   trailing?: Uint8Array
 }
 
+/**
+ * 바탕쪽. `secd` 아래에 쪽 테두리/배경 다음으로 LIST_HEADER와 형제 문단으로 온다(정오표 68).
+ * LIST_HEADER의 텍스트 영역 폭·높이 등(표 137)은 아직 해석하지 않고 `listHeaderRest`로 보존한다.
+ */
+export interface MasterPage extends ListHeaderRest {
+  paragraphs: Paragraph[]
+}
+
 export interface Section {
   pageDef: PageDef
   columnDef?: ColumnDef
   footnoteShape?: NoteShape
   endnoteShape?: NoteShape
   pageBorderFills?: PageBorderFill[]
+  masterPages?: MasterPage[]
   properties?: SectionProperties
   paragraphs: Paragraph[]
 }

@@ -177,7 +177,10 @@ function readParagraphList(
   const paragraphs: Paragraph[] = [];
   for (const node of nodes) {
     if (node.tagId !== SectionTag.ParaHeader) continue;
-    paragraphs.push(readParagraph(node, context, section));
+    // 구역 정의와 구역의 단 정의는 첫 문단에만 있다. 뒤 문단의 `cold`(다단 설정 나누기)는
+    // 구역 값을 덮지 않고 컨트롤로 남긴다.
+    const first = paragraphs.length === 0 ? section : undefined;
+    paragraphs.push(readParagraph(node, context, first));
   }
   return paragraphs;
 }
@@ -351,6 +354,8 @@ function readParaText(
     if (form === "extended") {
       const node = controlNodes[controlIndex++];
       const control = node ? readControl(node, context, section) : undefined;
+      // 모르는 컨트롤은 텍스트의 제어 문자도 원본대로 다시 쓴다.
+      if (control?.type === "unknown") control.charCode = code;
       if (control) items.push({ position: start, item: control });
       continue;
     }
@@ -411,39 +416,54 @@ function readControl(
 
   switch (ctrlId) {
     case CtrlId.SectionDefinition:
-      if (section) readSectionDefinition(node, section);
-      return undefined;
+      if (section) {
+        readSectionDefinition(node, section, context);
+        return undefined;
+      }
+      break;
     case CtrlId.ColumnDefinition:
-      if (section) readColumnDefinition(reader, section);
-      return undefined;
+      if (section) {
+        readColumnDefinition(reader, section);
+        return undefined;
+      }
+      break;
     case CtrlId.Table:
       return readTable(node, reader, context);
     case CtrlId.Header:
-    case CtrlId.Footer:
-      return {
+    case CtrlId.Footer: {
+      const props = reader.optionalUint32();
+      const control: Extract<Control, { type: "header" | "footer" }> = {
         type: ctrlId === CtrlId.Header ? "header" : "footer",
-        applyTo: reader.optionalUint32(),
-        paragraphs: readNestedParagraphs(node, context),
+        applyTo: bits(props, 0, 1),
+        ...readNestedParagraphs(node, context),
       };
+      const unknownBits = (props & ~0x3) >>> 0;
+      if (unknownBits) control.unknownBits = unknownBits;
+      if (reader.hasMore()) control.trailing = reader.rest();
+      return control;
+    }
     case CtrlId.Footnote:
     case CtrlId.Endnote:
-      return {
-        type: ctrlId === CtrlId.Footnote ? "footnote" : "endnote",
-        paragraphs: readNestedParagraphs(node, context),
+    case CtrlId.HiddenComment: {
+      const control: Extract<
+        Control,
+        { type: "footnote" | "endnote" | "hiddenComment" }
+      > = {
+        type:
+          ctrlId === CtrlId.Footnote
+            ? "footnote"
+            : ctrlId === CtrlId.Endnote
+              ? "endnote"
+              : "hiddenComment",
+        ...readNestedParagraphs(node, context),
       };
-    case CtrlId.HiddenComment:
-      return {
-        type: "hiddenComment",
-        paragraphs: readNestedParagraphs(node, context),
-      };
+      if (reader.hasMore()) control.trailing = reader.rest();
+      return control;
+    }
     case CtrlId.Bookmark:
       return { type: "bookmark", name: readBookmarkName(node) };
     case CtrlId.AutoNumber:
-      return {
-        type: "autoNumber",
-        numberKind: reader.optionalUint32() & 0x0f,
-        numberFormat: 0,
-      };
+      return readAutoNumber(reader);
     case CtrlId.PageHiding:
       return readPageHiding(reader.optionalUint32());
     case CtrlId.DrawingObject:
@@ -451,8 +471,8 @@ function readControl(
     default:
       if (ctrlId.startsWith("%"))
         return readField(ctrlId, node, reader, context);
-      return { type: "unknown", ctrlId, raw: node.payload };
   }
+  return { type: "unknown", ctrlId, raw: node.payload };
 }
 
 function readField(
@@ -514,16 +534,80 @@ function readBookmarkName(node: RecordNode): string {
   return reader.optionalString();
 }
 
+interface ParagraphListRead {
+  paragraphs: Paragraph[];
+  listHeaderRest?: Uint8Array;
+}
+
+/**
+ * LIST_HEADER로 시작하는 문단 리스트들을 읽는다. 한글은 문단을 LIST_HEADER의 자식이
+ * 아니라 같은 레벨의 형제로 뒤에 둔다(정오표 53, 68). 문단 수로 리스트를 가른다.
+ * 예전 js-hwp처럼 문단을 LIST_HEADER 아래에 둔 파일도 읽는다.
+ */
+function readParagraphLists(
+  children: RecordNode[],
+  context: ParseContext,
+): ParagraphListRead[] {
+  const lists: ParagraphListRead[] = [];
+  let current: ParagraphListRead | undefined;
+  let remaining = 0;
+  for (const child of children) {
+    if (child.tagId === SectionTag.ListHeader) {
+      const reader = new ByteReader(child.payload);
+      const count = reader.optionalUint16();
+      current = { paragraphs: readParagraphList(child.children, context) };
+      if (reader.hasMore()) current.listHeaderRest = reader.rest();
+      lists.push(current);
+      remaining = count - current.paragraphs.length;
+    } else if (
+      child.tagId === SectionTag.ParaHeader &&
+      current &&
+      remaining > 0
+    ) {
+      current.paragraphs.push(readParagraph(child, context));
+      remaining--;
+    }
+  }
+  return lists;
+}
+
+/** 컨트롤 하나에 딸린 문단 리스트. 문단이 없으면 빈 문단 하나를 둔다. */
 function readNestedParagraphs(
   node: RecordNode,
   context: ParseContext,
-): Paragraph[] {
-  const listHeader = childWithTag(node, SectionTag.ListHeader);
-  const source = listHeader ?? node;
-  const paragraphs = readParagraphList(source.children, context);
-  return paragraphs.length > 0
-    ? paragraphs
+): ParagraphListRead {
+  const [list] = readParagraphLists(node.children, context);
+  const paragraphs = list?.paragraphs.length
+    ? list.paragraphs
     : [{ paraShapeId: 0, styleId: 0, runs: [{ charShapeId: 0, items: [] }] }];
+  return list?.listHeaderRest
+    ? { paragraphs, listHeaderRest: list.listHeaderRest }
+    : { paragraphs };
+}
+
+/** 표 143 bit 0~12. */
+const AUTO_NUMBER_KNOWN = 0x1fff;
+
+/** 표 142. 앞뒤 장식은 한 글자다. */
+function readAutoNumber(reader: ByteReader): Control {
+  const props = reader.optionalUint32();
+  const control: Extract<Control, { type: "autoNumber" }> = {
+    type: "autoNumber",
+    numberKind: bits(props, 0, 3),
+    numberFormat: bits(props, 4, 11),
+  };
+  const number = reader.optionalUint16();
+  const userChar = reader.optionalUint16();
+  const prefix = reader.optionalUint16();
+  const suffix = reader.optionalUint16();
+  if (number) control.number = number;
+  if (userChar) control.userChar = String.fromCharCode(userChar);
+  if (prefix) control.prefix = String.fromCharCode(prefix);
+  if (suffix) control.suffix = String.fromCharCode(suffix);
+  if (bit(props, 12)) control.supscript = true;
+  const unknownBits = (props & ~AUTO_NUMBER_KNOWN) >>> 0;
+  if (unknownBits) control.unknownBits = unknownBits;
+  return control;
 }
 
 /** 표 145 bit 0~5(정오표 E24). */
@@ -554,7 +638,11 @@ const PAGE_BORDER_FILL_KNOWN = 0x1f;
 /** 표 132 bit 0~2. */
 const PAGE_DEF_KNOWN = 0x07;
 
-function readSectionDefinition(node: RecordNode, section: Section): void {
+function readSectionDefinition(
+  node: RecordNode,
+  section: Section,
+  context: ParseContext,
+): void {
   const reader = new ByteReader(node.payload);
   reader.uint32(); // ctrlId
   const props = reader.optionalUint32();
@@ -610,6 +698,9 @@ function readSectionDefinition(node: RecordNode, section: Section): void {
   );
   if (borderFills.length > 0)
     section.pageBorderFills = borderFills.map(readPageBorderFill);
+
+  const masterPages = readParagraphLists(node.children, context);
+  if (masterPages.length > 0) section.masterPages = masterPages;
 }
 
 function readPageDef(node: RecordNode): PageDef {
@@ -678,7 +769,7 @@ function readPageBorderFill(node: RecordNode): PageBorderFill {
     offsetTop: reader.optionalInt16(),
     offsetBottom: reader.optionalInt16(),
   };
-  if (bit(props, 0)) fill.fromPaperEdge = true;
+  if (bit(props, 0)) fill.relativeToPage = true;
   if (bit(props, 1)) fill.includeHeader = true;
   if (bit(props, 2)) fill.includeFooter = true;
   // 테두리/배경 ID는 다른 레코드처럼 1부터 센다고 보고 0을 없음으로 둔다(정오표 E23, 미확인).
@@ -1127,10 +1218,14 @@ function ctrlIdFor(control: Control): string {
       return CtrlId.Footnote;
     case "endnote":
       return CtrlId.Endnote;
+    case "hiddenComment":
+      return CtrlId.HiddenComment;
     case "bookmark":
       return CtrlId.Bookmark;
     case "pageHiding":
       return CtrlId.PageHiding;
+    case "autoNumber":
+      return CtrlId.AutoNumber;
     case "fieldBegin":
       return (
         Object.entries(FIELD_KIND_BY_CTRL_ID).find(
@@ -1182,6 +1277,8 @@ function controlCharFor(control: Control): number {
       return 0x0f;
     case "fieldBegin":
       return CHAR_FIELD_START;
+    case "unknown":
+      return control.charCode ?? CHAR_OBJECT;
     default:
       return CHAR_OBJECT;
   }
@@ -1345,21 +1442,22 @@ function writeControl(
             control.type === "header" ? CtrlId.Header : CtrlId.Footer,
           ),
         )
-        .uint32(control.applyTo);
+        .uint32(
+          setBits((control.unknownBits ?? 0) & ~0x3, 0, 1, control.applyTo),
+        );
+      if (control.trailing) header.bytes(control.trailing);
       writer.nested(SectionTag.CtrlHeader, header, () => {
-        writeNestedParagraphs(writer, doc, control.paragraphs);
+        writeNestedParagraphs(writer, doc, control);
       });
       return;
     }
     case "footnote":
-    case "endnote": {
-      const header = new ByteWriter().uint32(
-        writeCtrlId(
-          control.type === "footnote" ? CtrlId.Footnote : CtrlId.Endnote,
-        ),
-      );
+    case "endnote":
+    case "hiddenComment": {
+      const header = new ByteWriter().uint32(writeCtrlId(ctrlIdFor(control)));
+      if (control.trailing) header.bytes(control.trailing);
       writer.nested(SectionTag.CtrlHeader, header, () => {
-        writeNestedParagraphs(writer, doc, control.paragraphs);
+        writeNestedParagraphs(writer, doc, control);
       });
       return;
     }
@@ -1394,6 +1492,25 @@ function writeControl(
     case "picture":
       writePicture(writer, doc, control);
       return;
+    case "autoNumber": {
+      let props = (control.unknownBits ?? 0) & ~AUTO_NUMBER_KNOWN;
+      props = setBits(props, 0, 3, control.numberKind);
+      props = setBits(props, 4, 11, control.numberFormat);
+      props = setBit(props, 12, control.supscript);
+      const char = (value: string | undefined): number =>
+        value?.charCodeAt(0) ?? 0;
+      writer.write(
+        SectionTag.CtrlHeader,
+        new ByteWriter()
+          .uint32(writeCtrlId(CtrlId.AutoNumber))
+          .uint32(props)
+          .uint16(control.number ?? 1)
+          .uint16(char(control.userChar))
+          .uint16(char(control.prefix))
+          .uint16(char(control.suffix)),
+      );
+      return;
+    }
     case "pageHiding": {
       let props = (control.unknownBits ?? 0) & ~PAGE_HIDING_KNOWN;
       props = setBit(props, 0, control.hideHeader);
@@ -1421,23 +1538,29 @@ function writeControl(
   }
 }
 
+/**
+ * LIST_HEADER와 문단 리스트를 쓴다. 한글처럼 문단을 LIST_HEADER의 형제로 둔다(정오표 53, 68).
+ * 새로 만든 리스트의 LIST_HEADER는 문단 수 뒤에 속성 0만 쓴다.
+ */
 function writeNestedParagraphs(
   writer: RecordWriter,
   doc: HwpDocument,
-  paragraphs: Paragraph[],
+  list: { paragraphs: Paragraph[]; listHeaderRest?: Uint8Array },
 ): void {
-  const listHeader = new ByteWriter().uint16(paragraphs.length).uint32(0);
-  writer.nested(SectionTag.ListHeader, listHeader, () => {
-    paragraphs.forEach((paragraph, index) =>
-      writeParagraph(
-        writer,
-        doc,
-        paragraph,
-        undefined,
-        index === paragraphs.length - 1,
-      ),
-    );
-  });
+  const { paragraphs } = list;
+  const listHeader = new ByteWriter().uint16(paragraphs.length);
+  if (list.listHeaderRest) listHeader.bytes(list.listHeaderRest);
+  else listHeader.uint32(0);
+  writer.write(SectionTag.ListHeader, listHeader);
+  paragraphs.forEach((paragraph, index) =>
+    writeParagraph(
+      writer,
+      doc,
+      paragraph,
+      undefined,
+      index === paragraphs.length - 1,
+    ),
+  );
 }
 
 function writeSectionDefinition(
@@ -1505,7 +1628,7 @@ function writeSectionDefinition(
     );
     for (const fill of section.pageBorderFills ?? DEFAULT_PAGE_BORDER_FILLS) {
       let fillProps = (fill.unknownBits ?? 0) & ~PAGE_BORDER_FILL_KNOWN;
-      fillProps = setBit(fillProps, 0, fill.fromPaperEdge);
+      fillProps = setBit(fillProps, 0, fill.relativeToPage);
       fillProps = setBit(fillProps, 1, fill.includeHeader);
       fillProps = setBit(fillProps, 2, fill.includeFooter);
       fillProps = setBits(fillProps, 3, 4, fill.fillArea);
@@ -1520,6 +1643,10 @@ function writeSectionDefinition(
           .uint16(toIdRef(fill.borderFillId, "쪽 테두리/배경")),
       );
     }
+
+    for (const masterPage of section.masterPages ?? []) {
+      writeNestedParagraphs(writer, doc, masterPage);
+    }
   });
 }
 
@@ -1527,7 +1654,7 @@ function writeSectionDefinition(
 const DEFAULT_PAGE_BORDER_FILLS: readonly PageBorderFill[] = Array.from(
   { length: 3 },
   () => ({
-    fromPaperEdge: true,
+    relativeToPage: true,
     fillArea: 0,
     offsetLeft: 1417,
     offsetRight: 1417,
