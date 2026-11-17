@@ -629,8 +629,8 @@ function readPageHiding(props: number): Control {
   return control;
 }
 
-/** 표 130에서 모델이 이름으로 다루는 비트: 0~4, 19, 20~21(정오표 E23). */
-const SECTION_KNOWN = 0x0030001f | (1 << 19);
+/** 표 130에서 모델이 이름으로 다루는 비트: 0~4, 8~9, 19, 20~21(정오표 E23, E25). */
+const SECTION_KNOWN = 0x0030031f | (1 << 19);
 /** 표 134 bit 0~13. */
 const NOTE_SHAPE_KNOWN = 0x3fff;
 /** 표 136 bit 0~4. */
@@ -665,6 +665,8 @@ function readSectionDefinition(
   if (bit(props, 2)) properties.hideFirstMasterPage = true;
   if (bit(props, 3)) properties.hideFirstPageBorder = true;
   if (bit(props, 4)) properties.hideFirstPageFill = true;
+  if (bit(props, 8)) properties.showFirstPageBorderOnly = true;
+  if (bit(props, 9)) properties.showFirstPageFillOnly = true;
   if (bit(props, 19)) properties.hideEmptyLines = true;
   properties.pageNumberStart = bits(props, 20, 21);
   const unknownBits = (props & ~SECTION_KNOWN) >>> 0;
@@ -1575,6 +1577,8 @@ function writeSectionDefinition(
   props = setBit(props, 2, p.hideFirstMasterPage);
   props = setBit(props, 3, p.hideFirstPageBorder);
   props = setBit(props, 4, p.hideFirstPageFill);
+  props = setBit(props, 8, p.showFirstPageBorderOnly);
+  props = setBit(props, 9, p.showFirstPageFillOnly);
   props = setBit(props, 19, p.hideEmptyLines);
   props = setBits(props, 20, 21, p.pageNumberStart ?? PageNumberStart.Continue);
 

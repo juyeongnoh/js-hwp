@@ -141,21 +141,29 @@ export enum PageNumberStart {
   User = 3,
 }
 
-/** 구역 정의(표 129). 이름 붙인 비트는 한글 구역 설정으로 확인한 것뿐이다(정오표 E23). */
+/** 구역 정의(표 129). 이름 붙인 비트는 한글로 확인한 것뿐이다(정오표 E23, E25). */
 export interface SectionProperties {
   /** 첫 쪽에서 머리말, 꼬리말, 바탕쪽, 테두리, 배경을 감춘다(bit 0~4). */
   hideFirstHeader?: boolean
   hideFirstFooter?: boolean
   hideFirstMasterPage?: boolean
+  /**
+   * 쪽 테두리/배경 대화상자의 "적용 쪽"과 비트를 나눠 쓴다(정오표 63). 모두는 둘 다 끔,
+   * 첫 쪽 제외는 `hideFirstPage*`, 첫 쪽만은 `showFirstPage*Only`다.
+   */
   hideFirstPageBorder?: boolean
   hideFirstPageFill?: boolean
+  /** 첫 쪽에만 테두리, 배경을 표시한다(bit 8, 9). */
+  showFirstPageBorderOnly?: boolean
+  showFirstPageFillOnly?: boolean
   /** 빈 줄 감추기(bit 19). */
   hideEmptyLines?: boolean
   pageNumberStart?: PageNumberStart
   /**
-   * 속성에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. 명세가 쪽 번호 위치 감추기(bit 5),
-   * 첫 쪽에만 테두리/배경 표시(bit 8~9), 텍스트 방향(bit 16~18), 원고지 정서법(bit 22)이라고
-   * 적은 비트도 확인 전까지 여기 둔다.
+   * 속성에서 모델이 해석하지 않는 비트. 쓸 때 OR로 합친다. 명세가 쪽 번호 위치 감추기라고 적은
+   * bit 5는 켜는 UI를 찾지 못해 여기 둔다. 원고지 문서에서 함께 켜지는 bit 22(원고지 정서법)와
+   * 명세에 없는 bit 29도 따로 켜 보지 못해 여기 둔다(정오표 65). 명세가 텍스트 방향이라고 적은
+   * bit 16~18은 쓰이지 않는다. 글자 방향은 {@link trailing}에 있다(정오표 64).
    */
   unknownBits?: number
   /** 단 사이 간격. */
@@ -178,7 +186,11 @@ export interface SectionProperties {
   outlineNumberingId?: number
   /** 대표 언어(5.0.1.5 이상). 0이면 응용 프로그램의 언어. */
   language?: number
-  /** 알려진 필드 뒤의 바이트(5.0.2.5는 8B, 5.0.4.0 이상은 17B). 쓸 때 끝에 그대로 붙인다. */
+  /**
+   * 알려진 필드 뒤의 바이트(5.0.2.5는 8B, 5.0.4.0 이상은 17B). 쓸 때 끝에 그대로 붙인다.
+   * 4번째 바이트부터의 UINT32 bit 16~18이 글자 방향으로 보이지만 필드 경계를 확인하지 않아
+   * 해석하지 않는다(정오표 64).
+   */
   trailing?: Uint8Array
 }
 
