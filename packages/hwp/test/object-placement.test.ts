@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { NumberingKind, RelativeTo, TextWrap, type Control } from '@js-hwp/core'
+import { CaptionSide, DocumentBuilder, NumberingKind, RelativeTo, TextWrap, type Control } from '@js-hwp/core'
 import CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
 import { maybeInflate } from '../src/compress.js'
@@ -60,6 +60,71 @@ function firstTable(path: string): Extract<Control, { type: 'table' }> {
   }
   throw new Error(`표가 없다: ${path}`)
 }
+
+/** 첫 `tbl ` CTRL_HEADER의 자식 중 TABLE 레코드 앞(캡션 LIST_HEADER와 캡션 문단 트리). */
+function tableCaptionRecords(bytes: Uint8Array): string[] {
+  const c = CFB.read(bytes, { type: 'buffer' })
+  const header = CFB.find(c, 'FileHeader')!.content as Uint8Array
+  const compressed = (header[36]! & 1) === 1
+  const data = new Uint8Array(CFB.find(c, '/BodyText/Section0')!.content as Uint8Array)
+  const out: string[] = []
+  const dump = (n: RecordNode, depth: number): void => {
+    out.push(`${depth}:${n.tagId}:${Buffer.from(n.payload).toString('hex')}`)
+    n.children.forEach((child) => dump(child, depth + 1))
+  }
+  const find = (n: RecordNode): boolean => {
+    const p = n.payload
+    if (n.tagId === SectionTag.CtrlHeader && String.fromCharCode(p[3]!, p[2]!, p[1]!, p[0]!) === 'tbl ') {
+      for (const child of n.children) {
+        if (child.tagId === SectionTag.Table) break
+        dump(child, 0)
+      }
+      return true
+    }
+    return n.children.some(find)
+  }
+  buildRecordTree(parseRecords(maybeInflate(data, compressed))).some(find)
+  return out
+}
+
+const text = (paragraphs: { runs: { items: { type: string; value?: string }[] }[] }[]): string =>
+  paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items.map((i) => (i.type === 'text' ? i.value : '')))).join('')
+
+describe('개체 캡션', () => {
+  const file = 'docs/experiments/object-common-props/table-caption-bottom.hwp'
+
+  it('표 캡션을 읽는다 (한글 2024, 아래 캡션 "표 1 측정 결과")', () => {
+    const { placement } = firstTable(file)
+    expect(placement.caption).toMatchObject({
+      side: CaptionSide.Bottom,
+      fullSize: false,
+      width: 8504,
+      gap: 850,
+      maxWidth: placement.width,
+      listProperties: 0,
+      unknownBits: 0,
+      trailing: [0, 0, 0, 0, 0, 0, 0, 0],
+    })
+    expect(text(placement.caption!.paragraphs)).toContain('측정 결과')
+  })
+
+  it('표 캡션 LIST_HEADER와 문단을 원본과 같은 바이트로 다시 쓴다', () => {
+    const bytes = new Uint8Array(readFileSync(join(root, file)))
+    const records = tableCaptionRecords(bytes)
+    expect(records.length).toBeGreaterThan(0)
+    expect(tableCaptionRecords(serializeHwp(parseHwp(bytes)))).toEqual(records)
+  })
+
+  it('캡션이 있는 표만 bit 29를 켜고 TABLE 앞에 캡션을 쓴다', () => {
+    const withCaption = serializeHwp(new DocumentBuilder().table([['셀']], { caption: '표 캡션' }).build())
+    const without = serializeHwp(new DocumentBuilder().table([['셀']]).build())
+    const props = (bytes: Uint8Array) => Number.parseInt(objectHeaders(bytes)[0]!.slice(8, 16).match(/../g)!.reverse().join(''), 16)
+    expect((props(withCaption) >>> 29) & 1).toBe(1)
+    expect((props(without) >>> 29) & 1).toBe(0)
+    const table = parseHwp(withCaption).sections[0]!.paragraphs[0]!.runs[0]!.items[0]
+    expect(table?.type === 'table' && text(table.placement.caption!.paragraphs)).toBe('표 캡션')
+  })
+})
 
 describe('개체 공통 속성 (experiments/object-common-props, 한글 2024)', () => {
   const dir = 'docs/experiments/object-common-props'

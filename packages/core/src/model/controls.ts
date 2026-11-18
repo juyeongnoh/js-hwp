@@ -105,15 +105,28 @@ export enum CaptionSide {
   Bottom = 3,
 }
 
+/**
+ * 개체 캡션(표 71~73). 파일에서는 개체 CTRL_HEADER의 첫 자식 LIST_HEADER와 그 뒤 문단이고,
+ * 개체 공통 속성 bit 29가 켜진다.
+ */
 export interface Caption {
   side: CaptionSide;
-  /** 캡션 폭에 개체의 여백을 포함한다. */
+  /** 캡션 폭에 개체의 여백을 포함한다(가로 방향일 때만). */
   fullSize?: boolean;
+  /** 캡션 폭. 왼쪽·오른쪽 캡션일 때만 쓴다. */
   width: HwpUnit;
   /** 캡션과 개체 사이 간격. */
   gap: HwpUnit;
+  /** 텍스트의 최대 길이. 한글은 개체의 폭을 쓴다. 없으면 쓸 때 개체 폭을 쓴다. */
   maxWidth?: HwpUnit;
   paragraphs: Paragraph[];
+
+  /** 문단 리스트 헤더의 속성(UINT32, 오프셋 4). 다시 쓸 때 그대로 넣는다. */
+  listProperties?: number;
+  /** 캡션 속성에서 bit 0~2 밖의 비트. */
+  unknownBits?: number;
+  /** 캡션 정보(14B) 뒤에 남은 바이트. 한글 2024는 0을 8바이트 쓴다. */
+  trailing?: number[];
 }
 
 /**
@@ -226,7 +239,15 @@ export interface TableCell {
   margins?: CellMargins;
   /** {@link HwpDocument.borderFills}의 인덱스. */
   borderFillId?: number;
+  /**
+   * 세로 정렬(셀 LIST_HEADER 속성 bit 5~6). 없으면 한글의 새 셀 기본값인 가운데로 쓴다.
+   */
   verticalAlign?: VerticalAlign;
+  /**
+   * 셀 LIST_HEADER 속성(표 65)에서 세로 정렬 밖의 비트. 텍스트 방향(bit 0~2), 줄바꿈(bit 3~4) 등
+   * 모델이 아직 해석하지 않는 값이고, 다시 쓸 때 그대로 넣는다.
+   */
+  listUnknownBits?: number;
   /** 셀에 맞게 텍스트를 줄인다. */
   shrinkToFit?: boolean;
   /** 셀 안에서 줄바꿈을 막는다. */
@@ -443,7 +464,8 @@ export enum HeaderFooterApplyTo {
 
 /**
  * 문단 리스트를 가진 컨트롤이 LIST_HEADER에서 모델이 해석하지 않는 바이트.
- * 문단 수(2바이트) 뒤의 바이트이고, 쓸 때 문단 수 뒤에 그대로 붙인다.
+ * 문단 수(UINT32, 4바이트) 뒤, 곧 리스트 속성(UINT32)부터의 바이트이고, 쓸 때 문단 수 뒤에
+ * 그대로 붙인다. 명세 표 65는 문단 수를 INT16이라고 적었지만 실제로는 INT32다(정정 83).
  */
 export interface ListHeaderRest {
   listHeaderRest?: Uint8Array;

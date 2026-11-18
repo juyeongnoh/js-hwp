@@ -17,7 +17,9 @@
  */
 
 import {
+  type Caption,
   type Control,
+  type ObjectPlacement,
   FieldKind,
   type HwpDocument,
   type InlineItem,
@@ -623,9 +625,44 @@ interface ParagraphListRead {
 }
 
 /**
+ * 문단 리스트 헤더(표 65)의 앞부분. 문단 수는 명세의 INT16이 아니라 INT32이고, 속성 UINT32는
+ * 오프셋 4다(정정 83, experiments/list-header-para-count). `legacy`이면 예전 js-hwp가 쓴
+ * 6바이트 헤더(문단 수 UINT16, 속성 UINT32)로 읽는다.
+ *
+ * 한글은 읽을 때 문단 수를 쓰지 않는다. 코덱도 문단을 문단 수가 아니라 레코드 구조로 나눈다.
+ */
+interface ListHeaderRead {
+  paragraphCount: number;
+  properties: number;
+  /** 문단 수 뒤의 바이트(속성부터). 모델의 `listHeaderRest`. */
+  afterCount: Uint8Array;
+  /** 속성 다음 위치에 있는 리더. 셀·캡션처럼 뒤에 필드가 더 있을 때 이어 읽는다. */
+  reader: ByteReader;
+}
+
+function readListHeader(payload: Uint8Array, legacy: boolean): ListHeaderRead {
+  const reader = new ByteReader(payload);
+  const paragraphCount = legacy
+    ? reader.optionalUint16()
+    : reader.optionalUint32();
+  const afterCount = payload.subarray(reader.offset);
+  const properties = reader.optionalUint32();
+  return { paragraphCount, properties, afterCount, reader };
+}
+
+/** 문단 리스트 헤더 앞 8바이트를 쓴다: 문단 수 UINT32, 속성 UINT32. */
+function writeListHeader(
+  writer: ByteWriter,
+  paragraphCount: number,
+  properties: number,
+): ByteWriter {
+  return writer.uint32(paragraphCount).uint32(properties >>> 0);
+}
+
+/**
  * LIST_HEADER로 시작하는 문단 리스트들을 읽는다. 한글은 문단을 LIST_HEADER의 자식이
- * 아니라 같은 레벨의 형제로 뒤에 둔다(정오표 53, 68). 문단 수로 리스트를 가른다.
- * 예전 js-hwp처럼 문단을 LIST_HEADER 아래에 둔 파일도 읽는다.
+ * 아니라 같은 레벨의 형제로 뒤에 둔다(정오표 53, 68). 다음 LIST_HEADER까지의 문단이
+ * 그 리스트의 문단이다. 예전 js-hwp처럼 문단을 LIST_HEADER 아래에 둔 파일도 읽는다.
  */
 function readParagraphLists(
   children: RecordNode[],
@@ -633,22 +670,18 @@ function readParagraphLists(
 ): ParagraphListRead[] {
   const lists: ParagraphListRead[] = [];
   let current: ParagraphListRead | undefined;
-  let remaining = 0;
   for (const child of children) {
     if (child.tagId === SectionTag.ListHeader) {
-      const reader = new ByteReader(child.payload);
-      const count = reader.optionalUint16();
+      // 예전 js-hwp는 새 리스트를 6바이트(문단 수 UINT16 + 속성 0)로 썼다.
+      const { afterCount } = readListHeader(
+        child.payload,
+        child.payload.length < 8,
+      );
       current = { paragraphs: readParagraphList(child.children, context) };
-      if (reader.hasMore()) current.listHeaderRest = reader.rest();
+      if (afterCount.length > 0) current.listHeaderRest = afterCount.slice();
       lists.push(current);
-      remaining = count - current.paragraphs.length;
-    } else if (
-      child.tagId === SectionTag.ParaHeader &&
-      current &&
-      remaining > 0
-    ) {
+    } else if (child.tagId === SectionTag.ParaHeader && current) {
       current.paragraphs.push(readParagraph(child, context));
-      remaining--;
     }
   }
   return lists;
@@ -987,35 +1020,36 @@ function readTable(
     repeatHeaderRows = bit(properties, 2) ? 1 : 0;
   }
 
-  // 셀의 문단은 LIST_HEADER의 자식이 아니라 같은 레벨의 뒤따르는 레코드다.
-  // LIST_HEADER의 문단 수로 어느 셀에 속하는지 구분한다.
+  // 셀의 문단은 LIST_HEADER의 자식이 아니라 같은 레벨의 뒤따르는 레코드다. 다음
+  // LIST_HEADER까지의 문단이 그 셀(또는 캡션)의 문단이다. 한글처럼 문단 수는 쓰지 않는다.
   const rows: TableRow[] = Array.from(
     { length: Math.max(rowCount, 1) },
     () => ({ cells: [] }),
   );
-  let currentCell: TableCell | undefined;
-  let remainingParagraphs = 0;
+  // TABLE 레코드보다 앞에 오는 LIST_HEADER는 셀이 아니라 캡션이다.
+  let caption: Caption | undefined;
+  let seenTable = false;
+  let target: Paragraph[] | undefined;
   for (const child of node.children) {
-    if (child.tagId === SectionTag.ListHeader) {
-      currentCell = readTableCell(child, context);
-      const row = rows[currentCell.row] ?? rows[rows.length - 1];
-      row?.cells.push(currentCell);
-      remainingParagraphs =
-        new ByteReader(child.payload).optionalUint16() -
-        currentCell.paragraphs.length;
-    } else if (
-      child.tagId === SectionTag.ParaHeader &&
-      currentCell &&
-      remainingParagraphs > 0
-    ) {
-      currentCell.paragraphs.push(readParagraph(child, context));
-      remainingParagraphs--;
+    if (child.tagId === SectionTag.Table) {
+      seenTable = true;
+      target = undefined;
+    } else if (child.tagId === SectionTag.ListHeader && !seenTable) {
+      caption = readCaption(child, context);
+      target = caption.paragraphs;
+    } else if (child.tagId === SectionTag.ListHeader) {
+      const cell = readTableCell(child, context);
+      const row = rows[cell.row] ?? rows[rows.length - 1];
+      row?.cells.push(cell);
+      target = cell.paragraphs;
+    } else if (child.tagId === SectionTag.ParaHeader && target) {
+      target.push(readParagraph(child, context));
     }
   }
 
   return {
     type: "table",
-    placement,
+    placement: caption ? { ...placement, caption } : placement,
     rows: rows.filter((row) => row.cells.length > 0),
     cellMargins: margins,
     cellSpacing,
@@ -1025,16 +1059,82 @@ function readTable(
   };
 }
 
+/**
+ * 캡션 LIST_HEADER: 문단 리스트 헤더 8바이트(문단 수 UINT32, 리스트 속성 UINT32), 캡션 속성 UINT32,
+ * 캡션 폭 HWPUNIT, 틀과의 간격 HWPUNIT16, 텍스트 최대 길이 HWPUNIT(표 72), 나머지(한글 2024는
+ * 0 8바이트). 문단은 이 레코드의 형제로 뒤따른다(정정 84).
+ */
+function readCaption(node: RecordNode, context: ParseContext): Caption {
+  const { properties: listProperties, reader } = readListHeader(
+    node.payload,
+    false,
+  );
+  const properties = reader.optionalUint32();
+  const width = reader.optionalUint32();
+  const gap = reader.optionalUint16();
+  const maxWidth = reader.optionalUint32();
+  return {
+    side: bits(properties, 0, 1),
+    fullSize: bit(properties, 2),
+    width,
+    gap,
+    maxWidth,
+    // 예전 js-hwp처럼 문단을 LIST_HEADER 아래에 둔 파일도 읽는다.
+    paragraphs: readParagraphList(node.children, context),
+    listProperties,
+    unknownBits: (properties & ~0b111) >>> 0,
+    trailing: Array.from(reader.rest()),
+  };
+}
+
+function writeCaption(
+  writer: RecordWriter,
+  doc: HwpDocument,
+  caption: Caption,
+  objectWidth: number,
+): void {
+  const maxWidth = caption.maxWidth ?? objectWidth;
+  let properties = (caption.unknownBits ?? 0) & ~0b111;
+  properties = setBits(properties, 0, 1, caption.side);
+  properties = setBit(properties, 2, caption.fullSize);
+  const header = writeListHeader(
+    new ByteWriter(),
+    caption.paragraphs.length,
+    caption.listProperties ?? 0,
+  )
+    .uint32(properties >>> 0)
+    .uint32(caption.width)
+    .hwpUnit16(caption.gap)
+    .uint32(maxWidth)
+    .bytes(Uint8Array.from(caption.trailing ?? new Array(8).fill(0)));
+  writer.write(SectionTag.ListHeader, header);
+  caption.paragraphs.forEach((paragraph, index) => {
+    writeParagraph(
+      writer,
+      doc,
+      paragraph,
+      undefined,
+      index === caption.paragraphs.length - 1,
+      maxWidth,
+    );
+  });
+}
+
 function idRefField(ref: number): { borderFillId?: number } {
   const id = fromIdRef(ref);
   return id === undefined ? {} : { borderFillId: id };
 }
 
+/** 셀 LIST_HEADER 속성(표 65)의 세로 정렬 bit 5~6. 나머지 비트는 `listUnknownBits`로 보존한다. */
+const CELL_VERTICAL_ALIGN_MASK = 0b11 << 5;
+
 function readTableCell(node: RecordNode, context: ParseContext): TableCell {
-  const reader = new ByteReader(node.payload);
-  reader.uint16(); // paragraph count (LIST_HEADER)
-  const properties = reader.optionalUint32();
-  if (node.payload.length >= 34) reader.optionalUint16(); // width reference (extended LIST_HEADER)
+  // 리스트 헤더 뒤의 셀 필드(열·행·병합·크기·여백·테두리)는 26바이트다. 전체가 34바이트 미만이면
+  // 예전 js-hwp가 쓴 6바이트 헤더다.
+  const { properties, reader } = readListHeader(
+    node.payload,
+    node.payload.length < 34,
+  );
 
   const col = reader.optionalUint16();
   const row = reader.optionalUint16();
@@ -1063,6 +1163,9 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
     // 수 없는 Baseline에서 시작하므로 하나 밀어준다.
     verticalAlign: (CELL_VERTICAL_ALIGN_FROM_WIRE[bits(properties, 5, 6)] ??
       VerticalAlign.Top) as VerticalAlign,
+    ...(properties & ~CELL_VERTICAL_ALIGN_MASK
+      ? { listUnknownBits: (properties & ~CELL_VERTICAL_ALIGN_MASK) >>> 0 }
+      : {}),
     paragraphs: readParagraphList(node.children, context),
   };
 }
@@ -1124,14 +1227,14 @@ function findBinDataId(payload: Uint8Array): number | undefined {
 
 /**
  * 개체 공통 속성에서 뜻을 모르는 비트: bit 1(예약), bit 31.
- * bit 29는 캡션 유무다. 켜져 있는데 캡션 LIST_HEADER가 없으면 한글이 파일을 손상됐다고
- * 거부한다. 코덱은 아직 캡션을 쓰지 않으므로 bit 29는 보존하지 않고 늘 0으로 쓴다.
+ * bit 29는 캡션 유무다(정정 81). 켜져 있는데 캡션 LIST_HEADER가 없으면 한글이 파일을
+ * 손상됐다고 거부하므로, 값을 보존하지 않고 캡션을 실제로 쓸 때만 켠다.
  */
 const OBJECT_UNKNOWN_BITS = ((1 << 1) | (1 << 31)) >>> 0;
 
 function readObjectPlacement(
   reader: ByteReader,
-): Control extends { placement: infer P } ? P : never {
+): ObjectPlacement {
   const properties = reader.optionalUint32();
   const offsetY = reader.optionalInt32();
   const offsetX = reader.optionalInt32();
@@ -1187,7 +1290,7 @@ function readObjectPlacement(
     marginLeft,
     marginRight,
     instanceId,
-  } as never;
+  };
 }
 
 /** 글자 모양 맵을 써서 위치가 정해진 항목들을 run으로 묶는다. */
@@ -1765,7 +1868,7 @@ function writeControl(
 
 /**
  * LIST_HEADER와 문단 리스트를 쓴다. 한글처럼 문단을 LIST_HEADER의 형제로 둔다(정오표 53, 68).
- * 새로 만든 리스트의 LIST_HEADER는 문단 수 뒤에 속성 0만 쓴다.
+ * 문단 수는 UINT32다(정정 83). 새로 만든 리스트는 문단 수 뒤에 속성 0만 쓴다.
  */
 function writeNestedParagraphs(
   writer: RecordWriter,
@@ -1773,7 +1876,7 @@ function writeNestedParagraphs(
   list: { paragraphs: Paragraph[]; listHeaderRest?: Uint8Array },
 ): void {
   const { paragraphs } = list;
-  const listHeader = new ByteWriter().uint16(paragraphs.length);
+  const listHeader = new ByteWriter().uint32(paragraphs.length);
   if (list.listHeaderRest) listHeader.bytes(list.listHeaderRest);
   else listHeader.uint32(0);
   writer.write(SectionTag.ListHeader, listHeader);
@@ -1958,9 +2061,12 @@ function writeTable(
   table: Extract<Control, { type: "table" }>,
 ): void {
   const header = new ByteWriter().uint32(writeCtrlId(CtrlId.Table));
-  writeObjectPlacement(header, table.placement, 2);
+  const { caption } = table.placement;
+  writeObjectPlacement(header, table.placement, 2, caption !== undefined);
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
+    // 캡션은 TABLE 레코드보다 앞, CTRL_HEADER의 첫 자식이다(table-caption-bottom.hwp).
+    if (caption) writeCaption(writer, doc, caption, table.placement.width);
     const body = new ByteWriter();
     let properties = 0;
     properties = setBits(
@@ -2001,17 +2107,15 @@ function writeTableCell(
   cell: TableCell,
 ): void {
   const header = new ByteWriter();
-  header.uint16(cell.paragraphs.length);
-
-  let properties = 0x00200000;
-  properties = setBits(
-    properties,
+  // 세로 정렬이 없으면 한글의 새 셀 기본값(가운데)을 쓴다.
+  const properties = setBits(
+    (cell.listUnknownBits ?? 0) & ~CELL_VERTICAL_ALIGN_MASK,
     5,
     6,
-    CELL_VERTICAL_ALIGN_TO_WIRE[cell.verticalAlign ?? VerticalAlign.Top] ?? 0,
+    CELL_VERTICAL_ALIGN_TO_WIRE[cell.verticalAlign ?? VerticalAlign.Center] ??
+      1,
   );
-  header.uint32(properties);
-  header.uint16(1);
+  writeListHeader(header, cell.paragraphs.length, properties);
 
   header.uint16(cell.col);
   header.uint16(cell.row);
@@ -2045,7 +2149,8 @@ function writePicture(
   picture: Extract<Control, { type: "picture" }>,
 ): void {
   const header = new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject));
-  writeObjectPlacement(header, picture.placement, 1);
+  // 그림 캡션은 아직 쓰지 않는다. 그림 쓰기 자체를 한글에서 검증하지 못했다(BACKLOG).
+  writeObjectPlacement(header, picture.placement, 1, false);
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
     const shape = new ByteWriter()
@@ -2081,6 +2186,7 @@ function writeObjectPlacement(
   writer: ByteWriter,
   placement: Extract<Control, { type: "table" }>["placement"],
   objectKind: number,
+  writesCaption: boolean,
 ): void {
   let properties = (placement.unknownBits ?? 0) & OBJECT_UNKNOWN_BITS;
   properties = setBit(properties, 0, placement.treatAsChar);
@@ -2117,6 +2223,7 @@ function writeObjectPlacement(
     28,
     placement.numberingKind ?? objectKind,
   );
+  properties = setBit(properties, 29, writesCaption);
   properties = setBit(properties, 30, placement.locked);
 
   writer.uint32(properties >>> 0);
