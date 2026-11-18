@@ -813,13 +813,26 @@ export interface LineSegmentFlag {
   unknownBits?: number;
 }
 
+/**
+ * 영역 태그의 종류(태그 상위 8비트). 한글로 확인한 값만 둔다(정오표 72, E29).
+ * 파일의 다른 값도 그대로 읽고 쓴다.
+ */
+export enum RangeTagKind {
+  /** 형광펜. 데이터는 형광펜 색 COLORREF(`0x00BBGGRR`)의 아래 3바이트다. */
+  Highlight = 2,
+}
+
+/**
+ * 문단의 영역 태그(표 63). 한글은 형광펜을 종류 2로 저장한다(정오표 72, E29). 명세가 함께 적은
+ * 교정 부호는 한글 2024에서 20가지 모두 필드로 저장됐고, 변경 내용 추적의 글자 넣기도 영역 태그를 쓰지 않았다.
+ */
 export interface RangeTag {
-  /** 구간 시작 글자 위치. */
+  /** 구간 시작 글자 위치. PARA_TEXT 코드 단위이고 컨트롤 문자의 8칸도 센다. */
   start: number;
-  /** 구간 끝 글자 위치. */
+  /** 구간 끝 글자 위치. 이 위치의 글자는 구간에 들지 않는다. */
   end: number;
-  /** 종류(0~255). */
-  kind: number;
-  /** 종류별 데이터(24비트). */
+  /** 종류(0~255). {@link RangeTagKind} 밖의 값은 뜻을 모른다. */
+  kind: RangeTagKind;
+  /** 종류별 데이터(24비트). 형광펜은 색 COLORREF(`0x00BBGGRR`)의 아래 3바이트다. */
   data: number;
 }

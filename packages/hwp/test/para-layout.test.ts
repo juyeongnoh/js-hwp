@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { RangeTagKind } from '@js-hwp/core'
 import CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
 import { maybeInflate } from '../src/compress.js'
@@ -58,6 +59,16 @@ describe('영역 태그', () => {
     expect(count).toBe('2')
     expect(payload).toBe('00000000' + '03000000' + 'efcdabff' + '01000000' + '02000000' + '00000002')
     expect(parseHwp(bytes).sections[0]!.paragraphs[0]!.rangeTags).toEqual(tags)
+  })
+
+  it('한글이 저장한 형광펜을 종류 2, 데이터 COLORREF로 읽는다 (정오표 72, E29)', () => {
+    const doc = parseHwp(new Uint8Array(readFileSync(join(root, 'docs/experiments/range-tag-highlight/highlight-colors.hwp'))))
+    // 초록이 노란 구간을 덮으면 한글은 노란 구간을 잘라 겹치지 않게 저장한다. 끝 위치는 구간 밖이다.
+    expect(doc.sections[0]!.paragraphs[0]!.rangeTags).toEqual([
+      { start: 18, end: 23, kind: RangeTagKind.Highlight, data: 0x008000 },
+      { start: 23, end: 25, kind: RangeTagKind.Highlight, data: 0x00ffff },
+      { start: 26, end: 30, kind: RangeTagKind.Highlight, data: 0x0000ff },
+    ])
   })
 
   it('범위를 벗어난 종류는 거부한다', () => {
