@@ -28,6 +28,7 @@
 | `rect-size-column-flow-right-num-table.hwp` | 너비 단에 따라, 높이 고정값, 본문 위치 오른쪽, 번호 종류 표 | `0x0A094000` |
 | `rect-size-para-flow-right.hwp` | 너비 문단에 따라. 본문 위치를 양쪽으로 바꾸려 했으나 반영되지 않아 오른쪽 그대로다(처음 이름 `rect-size-para-flow-both.hwp`에서 바꿨다) | `0x0A09C000` |
 | `rect-treat-as-char.hwp` | 글자처럼 취급 켬 | `0x0A09C311` |
+| `table-caption-bottom.hwp` | 새 문서에 만들기 대화상자 기본값으로 표를 넣고 캡션 넣기(Ctrl+N, C). 캡션 "표 1" 뒤에 ` 측정 결과`를 입력 | `0x282A2210` |
 | `rect-caption-bottom.hwp` | (`object-props-out-of-dialog/base-float-rect.hwp` 상태에서) 캡션 아래 가운데 | `0x2809C000` |
 
 아이콘 이름은 마우스를 올려 나온 풍선 도움말로 확인했다. 순서는 어울림, 자리 차지, 글 앞으로, 글 뒤로다. `table-behind-para.hwp`는 처음에 네 번째 아이콘을 글 앞으로로 잘못 알고 `table-front-para.hwp`로 저장했다가, 풍선 도움말을 본 뒤 이름만 바꿨다.
@@ -70,14 +71,14 @@
 - **표를 다시 쓰면 속성의 bit 20(크기 고정), bit 26–28(번호 종류), bit 30(개체 보호)이 사라진다.** 번호 종류는 늘 표(2)로 쓴다. 오프셋 40(쪽나눔 방지)은 0으로 쓰고, 설명문과 끝 2바이트를 버려 48B가 46B가 된다.
 - 사각형(`gso `)은 코덱이 `unknown`으로 페이로드를 통째로 보존해서 CTRL_HEADER가 같았다. 대신 자식 레코드는 버린다(별건).
 
-2026-11-19에 위 문제를 고쳤다. bit 29(캡션)는 코덱이 캡션을 쓰지 않으므로 늘 0으로 쓴다(BACKLOG "개체 캡션 미지원"). 여백 순서를 바로잡고 `TextWrap`을 실제 값(Square 0, TopAndBottom 1, BehindText 2, InFrontOfText 3)으로 바꿨다. bit 20(`fixedSize`), bit 26–28(`numberingKind`), bit 30(`locked`), 나머지 모르는 비트(`unknownBits`), 오프셋 40(`keepWithAnchor`), 설명문, 끝 바이트(`trailing`)를 모델에 담아 다시 쓴다. `packages/hwp/test/object-placement.test.ts`가 저장소 HWP 파일의 개체 CTRL_HEADER 왕복과 이 폴더의 값을 확인한다.
+2026-11-19에 위 문제를 고쳤다. bit 29(캡션)는 캡션을 실제로 쓸 때만 켠다. 표 캡션은 `readTable`이 TABLE 앞의 LIST_HEADER를 캡션으로 읽고 `writeTable`이 다시 쓴다(`table-caption-bottom.hwp`로 확인, 코덱으로 다시 쓴 파일과 빌더로 만든 위·오른쪽 캡션 표를 한글에서 열어 캡션이 표시됨을 확인). 그림·그리기 개체 캡션은 BACKLOG "그림·그리기 개체 캡션". 여백 순서를 바로잡고 `TextWrap`을 실제 값(Square 0, TopAndBottom 1, BehindText 2, InFrontOfText 3)으로 바꿨다. bit 20(`fixedSize`), bit 26–28(`numberingKind`), bit 30(`locked`), 나머지 모르는 비트(`unknownBits`), 오프셋 40(`keepWithAnchor`), 설명문, 끝 바이트(`trailing`)를 모델에 담아 다시 쓴다. `packages/hwp/test/object-placement.test.ts`가 저장소 HWP 파일의 개체 CTRL_HEADER 왕복과 이 폴더의 값을 확인한다.
 
 **확인하지 않은 것**
 
 - 표에서 설명문을 넣는 방법(버튼이 비활성이었다).
 - 설명문 뒤 2바이트의 뜻. 값이 `00 00`이 아닌 파일을 보지 못했다.
 - 줄 간격에 영향(bit 2)을 대화상자 밖에서 켜는 방법(메뉴, 다른 대화상자).
-- 캡션 LIST_HEADER(30B)의 필드 뜻.
+- 캡션 LIST_HEADER(30B) 중 리스트 속성 뒤 UINT16과 끝 8바이트의 뜻. 나머지는 명세 표 71~73대로였다(문단 수, 리스트 속성, 캡션 속성 방향 3 = 아래, 폭 30mm, 간격 3mm, 최대 길이 = 개체 폭).
 
 ## 재현
 

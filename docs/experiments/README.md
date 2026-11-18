@@ -24,6 +24,8 @@
 | `object-common-props/`        | 개체 공통 속성(표 69, 70)의 비트·필드를 한글 대화상자 값과 대조 |
 | `object-overlap-lock/`        | "쪽 영역 안으로 제한", "서로 겹침 허용"을 바꿀 수 있는 조건과 잠겼을 때 저장되는 값 |
 | `object-props-out-of-dialog/` | 대화상자가 만들지 않는 개체 공통 속성 값(bit 2, 정렬·배치·기준의 범위 밖 값, bit 1·29·31)을 한글이 어떻게 여는지 |
+| `list-header-para-count/`     | 문단 리스트 헤더(표 65)의 문단 수가 INT16인지 INT32인지. 셀 문단 70,001개로 확인 |
+| `cell-vertical-align/`        | 셀 세로 정렬이 LIST_HEADER 속성(오프셋 4) bit 5~6인지, 새 셀 기본값 |
 | `scripts/`                    | 실험 파일 생성·검사 스크립트 (공용)                             |
 
 새 실험을 추가하면 이 표에 한 줄을 넣는다.
