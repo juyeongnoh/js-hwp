@@ -38,22 +38,43 @@ export enum HorzAlign {
   Outside = 4,
 }
 
+/**
+ * 세로 정렬(개체 공통 속성 bit 5~7).
+ *
+ * 명세 표 70은 3 inside, 4 outside도 적었지만 한글 2024는 세로 정렬에 이 값을
+ * 만들지 않는다(정정 79). 안쪽·바깥쪽은 가로 정렬({@link HorzAlign})의 값이다.
+ * 파일에 3, 4가 있으면 숫자 그대로 읽고 다시 쓴다.
+ */
 export enum VertAlign {
   Top = 0,
   Center = 1,
   Bottom = 2,
-  Inside = 3,
-  Outside = 4,
 }
 
-/** 떠 있는 개체 주위로 텍스트가 어떻게 흐르는지. */
+/**
+ * 떠 있는 개체 주위로 텍스트가 어떻게 흐르는지(본문과의 배치).
+ *
+ * 명세 표 70은 0~5(Square, Tight, Through, TopAndBottom, BehindText,
+ * InFrontOfText)라고 적었지만, 한글 2024가 저장한 값은 아래 넷이다
+ * (정오표 73).
+ */
 export enum TextWrap {
+  /** 어울림. */
   Square = 0,
-  Tight = 1,
-  Through = 2,
-  TopAndBottom = 3,
-  BehindText = 4,
-  InFrontOfText = 5,
+  /** 자리 차지. */
+  TopAndBottom = 1,
+  /** 글 뒤로. */
+  BehindText = 2,
+  /** 글 앞으로. */
+  InFrontOfText = 3,
+}
+
+/** 개체의 번호 종류. 캡션 번호를 어느 번호 체계로 매길지 정한다. */
+export enum NumberingKind {
+  None = 0,
+  Figure = 1,
+  Table = 2,
+  Equation = 3,
 }
 
 export enum TextFlowSide {
@@ -109,12 +130,22 @@ export interface ObjectPlacement {
   vertAlign?: VertAlign;
   horzRelTo: RelativeTo;
   horzAlign?: HorzAlign;
-  /** 개체를 앵커 문단과 같은 쪽에 유지한다. */
+  /**
+   * 쪽 영역 안으로 제한(bit 13). 세로 기준이 문단일 때 개체가 쪽 밖으로
+   * 나가지 않게 다음 쪽으로 넘긴다. 이름은 HWPX 속성 이름을 따랐다.
+   */
   flowWithText?: boolean;
+  /** 서로 겹침 허용(bit 14). */
   allowOverlap?: boolean;
+  /** 크기 고정(bit 20). */
+  fixedSize?: boolean;
 
   offsetX: SHwpUnit;
   offsetY: SHwpUnit;
+  /**
+   * 폭. {@link widthCriterion}이 Absolute가 아니면 HWPUNIT가 아니라 기준에 대한
+   * 백분율×100이다(32.42% → 3242. 정정 80). {@link height}도 같다.
+   */
   width: HwpUnit;
   height: HwpUnit;
   widthCriterion?: WidthCriterion;
@@ -132,14 +163,27 @@ export interface ObjectPlacement {
 
   /** 개체가 쪽 경계를 넘어 나뉘도록 허용한다. */
   allowPageSplit?: boolean;
-  /** 편집으로부터 보호한다. */
+  /** 개체 보호하기(bit 30, 명세에 없음). 보호된 개체는 한글에서 선택되지 않는다. */
   locked?: boolean;
+  /** 번호 종류(bit 26~28). 없으면 쓸 때 개체 종류의 기본값을 쓴다. */
+  numberingKind?: NumberingKind;
+  /** "개체와 조판 부호를 항상 같은 쪽에 놓기"(명세의 쪽나눔 방지, 오프셋 40). */
+  keepWithAnchor?: boolean;
 
   caption?: Caption;
-  /** 대체 텍스트 / 설명. 접근성과 HWPX가 쓴다. */
+  /** 개체 설명문. */
   description?: string;
   name?: string;
   instanceId?: number;
+
+  /** 속성 중 뜻을 모르는 비트(bit 1, 31). 다시 쓸 때 그대로 넣는다. */
+  unknownBits?: number;
+  /**
+   * 설명문 뒤에 남은 바이트. 한글 2024는 `00 00` 두 바이트를 쓴다.
+   * 없으면 명세대로 아무것도 쓰지 않는다.
+   * `null`이면 원본에 설명문 길이 필드부터 없었다(옛 44B 형식).
+   */
+  trailing?: number[] | null;
 }
 
 export const DEFAULT_PLACEMENT: ObjectPlacement = {

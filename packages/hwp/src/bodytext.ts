@@ -1122,6 +1122,13 @@ function findBinDataId(payload: Uint8Array): number | undefined {
   return undefined;
 }
 
+/**
+ * 개체 공통 속성에서 뜻을 모르는 비트: bit 1(예약), bit 31.
+ * bit 29는 캡션 유무다. 켜져 있는데 캡션 LIST_HEADER가 없으면 한글이 파일을 손상됐다고
+ * 거부한다. 코덱은 아직 캡션을 쓰지 않으므로 bit 29는 보존하지 않고 늘 0으로 쓴다.
+ */
+const OBJECT_UNKNOWN_BITS = ((1 << 1) | (1 << 31)) >>> 0;
+
 function readObjectPlacement(
   reader: ByteReader,
 ): Control extends { placement: infer P } ? P : never {
@@ -1131,11 +1138,21 @@ function readObjectPlacement(
   const width = reader.optionalUint32();
   const height = reader.optionalUint32();
   const zOrder = reader.optionalInt32();
-  const marginTop = reader.optionalInt16();
-  const marginBottom = reader.optionalInt16();
+  // 바깥 여백은 왼쪽, 오른쪽, 위쪽, 아래쪽 순서다(명세에는 순서가 없다. 정정 75).
   const marginLeft = reader.optionalInt16();
   const marginRight = reader.optionalInt16();
+  const marginTop = reader.optionalInt16();
+  const marginBottom = reader.optionalInt16();
   const instanceId = reader.optionalUint32();
+  const keepWithAnchor = reader.hasMore(4) ? reader.int32() !== 0 : undefined;
+  // 설명문 길이 필드가 없는 옛 형식(44B)은 trailing을 null로 둬서 그대로 다시 쓴다.
+  let description: string | undefined;
+  let trailing: number[] | null = null;
+  if (reader.hasMore(2)) {
+    description = reader.string();
+    // 한글 2024는 설명문 뒤에 명세에 없는 2바이트를 더 쓴다(정정 76).
+    trailing = Array.from(reader.rest());
+  }
 
   return {
     treatAsChar: bit(properties, 0),
@@ -1149,8 +1166,15 @@ function readObjectPlacement(
     horzAlign: bits(properties, 10, 12),
     flowWithText: bit(properties, 13),
     allowOverlap: bit(properties, 14),
+    fixedSize: bit(properties, 20),
     textWrap: bits(properties, 21, 23),
     textFlowSide: bits(properties, 24, 25),
+    numberingKind: bits(properties, 26, 28),
+    locked: bit(properties, 30),
+    unknownBits: (properties & OBJECT_UNKNOWN_BITS) >>> 0,
+    keepWithAnchor,
+    description,
+    trailing,
     offsetX,
     offsetY,
     width,
@@ -2058,7 +2082,7 @@ function writeObjectPlacement(
   placement: Extract<Control, { type: "table" }>["placement"],
   objectKind: number,
 ): void {
-  let properties = 0;
+  let properties = (placement.unknownBits ?? 0) & OBJECT_UNKNOWN_BITS;
   properties = setBit(properties, 0, placement.treatAsChar);
   properties = setBit(properties, 2, placement.affectLineSpacing);
   // 모델의 Paragraph는 3이지만 HWP 세로 기준에서 문단은 2다.
@@ -2079,6 +2103,7 @@ function writeObjectPlacement(
   properties = setBit(properties, 14, placement.allowOverlap);
   properties = setBits(properties, 15, 17, placement.widthCriterion ?? 4);
   properties = setBits(properties, 18, 19, placement.heightCriterion ?? 2);
+  properties = setBit(properties, 20, placement.fixedSize);
   properties = setBits(
     properties,
     21,
@@ -2086,19 +2111,28 @@ function writeObjectPlacement(
     placement.textWrap ?? (objectKind === 2 ? 1 : 0),
   );
   properties = setBits(properties, 24, 25, placement.textFlowSide ?? 0);
-  properties = setBits(properties, 26, 28, objectKind);
+  properties = setBits(
+    properties,
+    26,
+    28,
+    placement.numberingKind ?? objectKind,
+  );
+  properties = setBit(properties, 30, placement.locked);
 
-  writer.uint32(properties);
+  writer.uint32(properties >>> 0);
   writer.int32(placement.offsetY);
   writer.int32(placement.offsetX);
   writer.uint32(placement.width);
   writer.uint32(placement.height);
   writer.int32(placement.zOrder ?? 0);
-  writer.int16(placement.marginTop ?? 0);
-  writer.int16(placement.marginBottom ?? 0);
   writer.int16(placement.marginLeft ?? 0);
   writer.int16(placement.marginRight ?? 0);
+  writer.int16(placement.marginTop ?? 0);
+  writer.int16(placement.marginBottom ?? 0);
   writer.uint32(placement.instanceId ?? 0);
-  writer.int32(0); // prevent page break
-  writer.uint16(0); // description length
+  writer.int32(placement.keepWithAnchor ? 1 : 0);
+  if (placement.trailing === null) return;
+  writer.string(placement.description ?? "");
+  // 새 개체는 명세 길이(46 + 2×len)로 쓴다. 한글은 이 길이도 읽는다(저장소 표 148개).
+  writer.bytes(Uint8Array.from(placement.trailing ?? []));
 }
