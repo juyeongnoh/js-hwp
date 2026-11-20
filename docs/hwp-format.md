@@ -427,7 +427,23 @@ PARA_HEADER (0)
 | 18 | HWPUNIT | 텍스트 최대 길이 = 개체 폭 (`maxWidth`) |
 | 22 | 8바이트 | **명세에 없음. 늘 0** (`trailing`) |
 
-표 셀 등 다른 LIST_HEADER도 앞 8바이트(문단 수 INT32, 속성 UINT32)는 같다. 셀의 세로 정렬은 이 속성의 bit 5~6(0 위, 1 가운데, 2 아래)이다(`experiments/cell-vertical-align`). 한글은 읽을 때 문단 수를 쓰지 않고, 다음 LIST_HEADER까지의 형제 문단을 그 리스트의 문단으로 본다.
+표 셀 등 다른 LIST_HEADER도 앞 8바이트(문단 수 INT32, 속성 UINT32)는 같다. 한글은 읽을 때 문단 수를 쓰지 않고, 다음 LIST_HEADER까지의 형제 문단을 그 리스트의 문단으로 본다.
+
+**문단 리스트 속성(오프셋 4, UINT32).** 셀 LIST_HEADER로 확인했다(정정 85, E33, `experiments/list-header-properties`, `experiments/cell-vertical-align`). 괄호는 HWPX 속성과 셀 모델 필드다.
+
+| 비트 | 설명 |
+| --- | --- |
+| 0~2 | 글자 방향: 0 가로, 1 세로·영문 눕힘, 2 세로·영문 세움 (`subList textDirection`, `textDirection`) |
+| 3~4 | 줄바꿈: 0 일반, 1 자간을 조정해 한 줄 유지, 2 내용에 따라 폭이 늘어남 (`subList lineWrap`, `lineWrap`) |
+| 5~6 | 세로 정렬: 0 위, 1 가운데, 2 아래. 새 셀은 1 (`subList vertAlign`, `verticalAlign`) |
+| 16 | 셀: 안 여백 지정 (`tc hasMargin`, `hasMargin`) |
+| 17 | 셀: 셀 보호 (`tc protect`, `protect`) |
+| 18 | 셀: 제목 셀 (`tc header`, `header`) |
+| 19 | 셀: 양식 모드에서 편집 가능 (`tc editable`, `editable`) |
+| 20 | 셀: `tc dirty`, 뜻 미확인 (`dirty`) |
+| 24, 26 | **명세에 없음. 뜻 모름.** 한글 문서의 셀에 흔하다. HWPX에 대응 속성이 없다 (`listUnknownBits`) |
+
+한글은 범위 밖 값(글자 방향 3~7, 줄바꿈 3, 세로 정렬 3)과 bit 21~31을 다시 저장할 때 지우지 않는다. 코덱은 bit 0~6을 모든 LIST_HEADER에 공통으로 읽는다(`readListHeader`, 모델 `ListProperties`). 범위 밖 글자 방향·줄바꿈은 필드에 그대로, 세로 정렬 3과 bit 7~31은 모르는 비트로 보존한다. 셀은 여기에 bit 16~20을 더 읽는다. 셀이 아닌 리스트(캡션, 머리말·꼬리말, 바탕쪽, 메모)의 모델은 아직 공통 해석을 쓰지 않고 속성을 그대로 보존한다.
 
 ### 구역 정의 (`secd`)
 

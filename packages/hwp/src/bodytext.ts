@@ -35,6 +35,8 @@ import {
   type Section,
   type SectionProperties,
   TextDirection,
+  ListLineWrap,
+  type ListProperties,
   PageBreakInTable,
   RelativeTo,
   type TableCell,
@@ -104,15 +106,15 @@ export const CONTROL_FORM: readonly ("char" | "inline" | "extended")[] = [
   "char", // 0x1F 고정폭 빈칸
 ];
 
-/** 파일에서 셀 세로 정렬은 0=위, 1=가운데, 2=아래다. */
-export const CELL_VERTICAL_ALIGN_FROM_WIRE = [
+/** 파일에서 문단 리스트의 세로 정렬은 0=위, 1=가운데, 2=아래다. */
+export const LIST_VERTICAL_ALIGN_FROM_WIRE = [
   VerticalAlign.Top,
   VerticalAlign.Center,
   VerticalAlign.Bottom,
 ];
 
-/** 모델의 VerticalAlign으로 인덱싱한다. Baseline은 셀에 대응물이 없다. */
-export const CELL_VERTICAL_ALIGN_TO_WIRE = [0, 0, 1, 2];
+/** 모델의 VerticalAlign으로 인덱싱한다. Baseline은 문단 리스트에 대응물이 없다. */
+export const LIST_VERTICAL_ALIGN_TO_WIRE = [0, 0, 1, 2];
 
 export const CHAR_TAB = 0x09;
 export const CHAR_LINE_BREAK = 0x0a;
@@ -633,7 +635,15 @@ interface ParagraphListRead {
  */
 interface ListHeaderRead {
   paragraphCount: number;
+  /** 속성 UINT32 원래 값. */
   properties: number;
+  /** 속성 bit 0~6을 해석한 값. */
+  list: ListProperties;
+  /**
+   * 속성에서 `list`로 읽지 않은 비트. bit 7~31이고, 세로 정렬이 범위 밖(3)이면 bit 5~6도
+   * 들어 있다. 셀은 여기서 셀 속성(bit 16~20)을 더 읽는다.
+   */
+  unknownBits: number;
   /** 문단 수 뒤의 바이트(속성부터). 모델의 `listHeaderRest`. */
   afterCount: Uint8Array;
   /** 속성 다음 위치에 있는 리더. 셀·캡션처럼 뒤에 필드가 더 있을 때 이어 읽는다. */
@@ -647,7 +657,60 @@ function readListHeader(payload: Uint8Array, legacy: boolean): ListHeaderRead {
     : reader.optionalUint32();
   const afterCount = payload.subarray(reader.offset);
   const properties = reader.optionalUint32();
-  return { paragraphCount, properties, afterCount, reader };
+  return {
+    paragraphCount,
+    properties,
+    ...readListProperties(properties),
+    afterCount,
+    reader,
+  };
+}
+
+/** 문단 리스트 속성(표 65)에서 모든 리스트에 공통인 bit 0~6(정정 85). */
+const LIST_PROPERTIES_MASK = 0b1111111;
+const LIST_VERTICAL_ALIGN_MASK = 0b11 << 5;
+
+/**
+ * 문단 리스트 속성 bit 0~6을 읽는다: 글자 방향 bit 0~2, 줄바꿈 bit 3~4, 세로 정렬 bit 5~6.
+ * 기본값(가로, 일반 줄바꿈)은 필드를 두지 않는다. 세로 정렬은 0~2면 늘 필드로 두고, 범위 밖 3은
+ * `unknownBits`에 비트로 남긴다.
+ */
+function readListProperties(properties: number): {
+  list: ListProperties;
+  unknownBits: number;
+} {
+  const list: ListProperties = {};
+  const textDirection = bits(properties, 0, 2);
+  if (textDirection !== TextDirection.Horizontal)
+    list.textDirection = textDirection;
+  const lineWrap = bits(properties, 3, 4);
+  if (lineWrap !== ListLineWrap.Break) list.lineWrap = lineWrap;
+  const verticalAlign = LIST_VERTICAL_ALIGN_FROM_WIRE[bits(properties, 5, 6)];
+  if (verticalAlign !== undefined) list.verticalAlign = verticalAlign;
+  let unknownBits = (properties & ~LIST_PROPERTIES_MASK) >>> 0;
+  if (verticalAlign === undefined)
+    unknownBits = (unknownBits | LIST_VERTICAL_ALIGN_MASK) >>> 0;
+  return { list, unknownBits };
+}
+
+/**
+ * {@link readListProperties}의 반대. `unknownBits`의 bit 7~31을 그대로 두고 bit 0~6을 `list`로
+ * 채운다. 세로 정렬이 없으면 `unknownBits`에 남은 범위 밖 값(3)을, 그것도 없으면
+ * `defaultAlign`을 쓴다.
+ */
+function listPropertiesBits(
+  list: ListProperties,
+  unknownBits: number,
+  defaultAlign: VerticalAlign,
+): number {
+  let properties = unknownBits & ~LIST_PROPERTIES_MASK;
+  properties = setBits(properties, 0, 2, list.textDirection ?? 0);
+  properties = setBits(properties, 3, 4, list.lineWrap ?? ListLineWrap.Break);
+  const align =
+    list.verticalAlign === undefined && bits(unknownBits, 5, 6) === 3
+      ? 3
+      : (LIST_VERTICAL_ALIGN_TO_WIRE[list.verticalAlign ?? defaultAlign] ?? 0);
+  return setBits(properties, 5, 6, align) >>> 0;
 }
 
 /** 문단 리스트 헤더 앞 8바이트를 쓴다: 문단 수 UINT32, 속성 UINT32. */
@@ -1125,13 +1188,45 @@ function idRefField(ref: number): { borderFillId?: number } {
   return id === undefined ? {} : { borderFillId: id };
 }
 
-/** 셀 LIST_HEADER 속성(표 65)의 세로 정렬 bit 5~6. 나머지 비트는 `listUnknownBits`로 보존한다. */
-const CELL_VERTICAL_ALIGN_MASK = 0b11 << 5;
+/**
+ * 셀 LIST_HEADER 속성(표 65)의 셀 전용 비트 bit 16~20(HWPX `hp:tc`의 `hasMargin`, `protect`,
+ * `header`, `editable`, `dirty`, `experiments/list-header-properties`). 공통 bit 0~6은
+ * {@link readListProperties}가 읽고, 나머지는 `listUnknownBits`로 보존한다.
+ */
+const CELL_FLAGS = [
+  [16, "hasMargin"],
+  [17, "protect"],
+  [18, "header"],
+  [19, "editable"],
+  [20, "dirty"],
+] as const;
+const CELL_FLAGS_MASK = 0b11111 << 16;
+
+/** 공통 리스트 속성에 셀 전용 비트를 더해 셀 필드로 만든다. */
+function readCellListProperties(
+  list: ListProperties,
+  unknownBits: number,
+): Partial<TableCell> {
+  const cell: Partial<TableCell> = { ...list };
+  for (const [index, key] of CELL_FLAGS)
+    if (bit(unknownBits, index)) cell[key] = true;
+  const unknown = (unknownBits & ~CELL_FLAGS_MASK) >>> 0;
+  if (unknown) cell.listUnknownBits = unknown;
+  return cell;
+}
+
+/** {@link readCellListProperties}의 반대. 세로 정렬이 없으면 한글의 새 셀 기본값(가운데)을 쓴다. */
+function cellListProperties(cell: TableCell): number {
+  let unknown = (cell.listUnknownBits ?? 0) & ~CELL_FLAGS_MASK;
+  for (const [index, key] of CELL_FLAGS)
+    unknown = setBit(unknown, index, cell[key]);
+  return listPropertiesBits(cell, unknown, VerticalAlign.Center);
+}
 
 function readTableCell(node: RecordNode, context: ParseContext): TableCell {
   // 리스트 헤더 뒤의 셀 필드(열·행·병합·크기·여백·테두리)는 26바이트다. 전체가 34바이트 미만이면
   // 예전 js-hwp가 쓴 6바이트 헤더다.
-  const { properties, reader } = readListHeader(
+  const { list, unknownBits, reader } = readListHeader(
     node.payload,
     node.payload.length < 34,
   );
@@ -1159,13 +1254,7 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
     height,
     margins,
     ...idRefField(borderFillRef),
-    // 파일의 값은 0=위, 1=가운데, 2=아래다. 모델의 VerticalAlign은 셀이 가질
-    // 수 없는 Baseline에서 시작하므로 하나 밀어준다.
-    verticalAlign: (CELL_VERTICAL_ALIGN_FROM_WIRE[bits(properties, 5, 6)] ??
-      VerticalAlign.Top) as VerticalAlign,
-    ...(properties & ~CELL_VERTICAL_ALIGN_MASK
-      ? { listUnknownBits: (properties & ~CELL_VERTICAL_ALIGN_MASK) >>> 0 }
-      : {}),
+    ...readCellListProperties(list, unknownBits),
     paragraphs: readParagraphList(node.children, context),
   };
 }
@@ -2107,15 +2196,7 @@ function writeTableCell(
   cell: TableCell,
 ): void {
   const header = new ByteWriter();
-  // 세로 정렬이 없으면 한글의 새 셀 기본값(가운데)을 쓴다.
-  const properties = setBits(
-    (cell.listUnknownBits ?? 0) & ~CELL_VERTICAL_ALIGN_MASK,
-    5,
-    6,
-    CELL_VERTICAL_ALIGN_TO_WIRE[cell.verticalAlign ?? VerticalAlign.Center] ??
-      1,
-  );
-  writeListHeader(header, cell.paragraphs.length, properties);
+  writeListHeader(header, cell.paragraphs.length, cellListProperties(cell));
 
   header.uint16(cell.col);
   header.uint16(cell.row);

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DocumentBuilder, VerticalAlign, type Control } from '@js-hwp/core'
+import { ListLineWrap, DocumentBuilder, TextDirection, VerticalAlign, type Control, type TableCell } from '@js-hwp/core'
 import CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
 import { maybeInflate } from '../src/compress.js'
@@ -90,5 +90,63 @@ describe('셀 세로 정렬 (experiments/cell-vertical-align, 한글 2024)', () 
     const heads = listHeads(serializeHwp(doc))
     // 문단 수 1(UINT32), 속성 0x40(아래) / 0x20(가운데)
     expect(heads).toEqual(['0100000040000000', '0100000020000000'])
+  })
+})
+
+describe('셀 LIST_HEADER 속성 (experiments/list-header-properties, 한글 2024)', () => {
+  const dir = 'docs/experiments/list-header-properties'
+  const KEYS = ['textDirection', 'lineWrap', 'verticalAlign', 'hasMargin', 'protect', 'header', 'editable', 'dirty', 'listUnknownBits'] as const
+  const pick = (cell: TableCell) => Object.fromEntries(KEYS.filter((k) => cell[k] !== undefined).map((k) => [k, cell[k]]))
+  const C = VerticalAlign.Center
+
+  it('한글이 셀 대화상자 값으로 저장한 비트를 필드로 읽는다 (HWPX tc·subList 속성과 대조)', () => {
+    const cells = firstTable(`${dir}/cell-props.hwp`).rows.flatMap((r) => r.cells)
+    expect(cells.map(pick)).toEqual([
+      { verticalAlign: C },
+      { verticalAlign: C, header: true },
+      { verticalAlign: C, hasMargin: true },
+      { verticalAlign: C, hasMargin: true },
+      { verticalAlign: C, editable: true },
+      { verticalAlign: C, dirty: true },
+      { verticalAlign: C, textDirection: TextDirection.Vertical },
+      { verticalAlign: C, textDirection: TextDirection.VerticalAll },
+      { verticalAlign: C, lineWrap: ListLineWrap.Squeeze },
+      { verticalAlign: C, lineWrap: ListLineWrap.Keep },
+      { verticalAlign: VerticalAlign.Top },
+      { verticalAlign: VerticalAlign.Bottom },
+      { verticalAlign: C },
+      { verticalAlign: C, header: true, editable: true },
+      // 마지막 셀에 셀 보호를 켜면 한글이 bit 26도 켰다. 뜻은 모른다.
+      { verticalAlign: C, protect: true, listUnknownBits: 1 << 26 },
+    ])
+  })
+
+  it('한글이 쓰지 않는 값도 그대로 둔다: 글자 방향 4, 줄바꿈 3, 세로 정렬 3', () => {
+    expect(pick(firstTable(`${dir}/textdir-4.hwp`).rows[0]!.cells[0]!)).toEqual({ verticalAlign: C, textDirection: 4 })
+    expect(pick(firstTable(`${dir}/linewrap-3.hwp`).rows[0]!.cells[0]!)).toEqual({ verticalAlign: C, lineWrap: 3 })
+    expect(pick(firstTable(`${dir}/valign-3.hwp`).rows[0]!.cells[0]!)).toEqual({ listUnknownBits: 0b11 << 5 })
+  })
+
+  it('필드를 비트로 쓴다', () => {
+    const doc = new DocumentBuilder().table([['a', 'b']]).build()
+    const table = doc.sections[0]!.paragraphs[0]!.runs[0]!.items[0] as Extract<Control, { type: 'table' }>
+    Object.assign(table.rows[0]!.cells[0]!, {
+      textDirection: TextDirection.VerticalAll,
+      lineWrap: ListLineWrap.Keep,
+      verticalAlign: VerticalAlign.Top,
+      hasMargin: true,
+      protect: true,
+      header: true,
+      editable: true,
+      dirty: true,
+      listUnknownBits: (1 << 24) | (1 << 26),
+    })
+    // 0x02(글자 방향) | 0x10(줄바꿈) | 0(위) | 0x1F0000(bit 16~20) | 0x5000000 = 0x051F0012
+    expect(listHeads(serializeHwp(doc))).toEqual(['0100000012001f05', '0100000020000000'])
+  })
+
+  it('빌더의 제목 행 셀에 제목 셀 비트(18)를 쓴다', () => {
+    const doc = new DocumentBuilder().table([['h1', 'h2'], ['a', 'b']], { header: true }).build()
+    expect(listHeads(serializeHwp(doc))).toEqual(['0100000020000400', '0100000020000400', '0100000020000000', '0100000020000000'])
   })
 })

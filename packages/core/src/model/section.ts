@@ -141,7 +141,10 @@ export enum PageNumberStart {
   User = 3,
 }
 
-/** 구역의 글자 방향(정오표 64, E27). HWPX `textDirection`의 순서와 같다. */
+/**
+ * 글자 방향. 구역(정오표 64, E27)과 문단 리스트 속성 bit 0~2(표 65)가 같은 값을 쓴다.
+ * HWPX `textDirection`의 순서와 같다.
+ */
 export enum TextDirection {
   Horizontal = 0,
   /** 세로쓰기, 영문 눕힘. */

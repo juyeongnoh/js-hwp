@@ -16,6 +16,7 @@ import type {
   NumberFormat,
   VerticalAlign,
 } from "./docinfo.js";
+import type { TextDirection } from "./section.js";
 import type { HwpUnit, SHwpUnit } from "./units.js";
 
 // ---------------------------------------------------------------------------
@@ -228,7 +229,37 @@ export interface CellMargins {
   bottom: HwpUnit;
 }
 
-export interface TableCell {
+/** 문단 리스트의 줄바꿈(표 65 bit 3~4). HWPX `lineWrap`의 순서와 같다. */
+export enum ListLineWrap {
+  /** 일반적인 줄바꿈. HWPX `BREAK`. */
+  Break = 0,
+  /** 자간을 조정하여 한 줄을 유지. HWPX `SQUEEZE`. */
+  Squeeze = 1,
+  /** 내용에 따라 폭이 늘어남. HWPX `KEEP`. */
+  Keep = 2,
+}
+
+/**
+ * 문단 리스트 속성(표 65, LIST_HEADER 오프셋 4)의 bit 0~6. 모든 LIST_HEADER에 공통인 부분이고,
+ * HWPX `hp:subList`의 `textDirection`, `lineWrap`, `vertAlign`에 해당한다. 비트 위치는 셀로
+ * 확인했다(정정 85, `experiments/list-header-properties`).
+ */
+export interface ListProperties {
+  /**
+   * 글자 방향(bit 0~2). 없으면 가로. 한글이 쓰지 않는 3~7도 다시 저장할 때 그대로 남으므로
+   * 읽은 값을 그대로 둔다.
+   */
+  textDirection?: TextDirection;
+  /** 줄바꿈(bit 3~4). 없으면 일반 줄바꿈. 3도 그대로 둔다. */
+  lineWrap?: ListLineWrap;
+  /**
+   * 세로 정렬(bit 5~6, 파일 값 0 위, 1 가운데, 2 아래). 셀에서 없으면 한글의 새 셀 기본값인
+   * 가운데로 쓴다. 범위 밖 값 3은 이 필드 없이 리스트의 모르는 비트로 남는다.
+   */
+  verticalAlign?: VerticalAlign;
+}
+
+export interface TableCell extends ListProperties {
   /** 0부터 시작하는 격자 위치. */
   col: number;
   row: number;
@@ -239,21 +270,22 @@ export interface TableCell {
   margins?: CellMargins;
   /** {@link HwpDocument.borderFills}의 인덱스. */
   borderFillId?: number;
+  /** 셀 안 여백 지정(bit 16, HWPX `hasMargin`). 한글은 셀 여백을 직접 정하면 켠다. */
+  hasMargin?: boolean;
+  /** 셀 보호(bit 17, HWPX `protect`). */
+  protect?: boolean;
+  /** 제목 셀(bit 18, HWPX `header`). 표의 제목 줄 반복에 쓰인다. */
+  header?: boolean;
+  /** 양식 모드에서 편집 가능(bit 19, HWPX `editable`). */
+  editable?: boolean;
+  /** bit 20, HWPX `dirty`. 한글 자동화의 셀 파라미터 `Dirty`이며 뜻은 확인하지 않았다. */
+  dirty?: boolean;
   /**
-   * 세로 정렬(셀 LIST_HEADER 속성 bit 5~6). 없으면 한글의 새 셀 기본값인 가운데로 쓴다.
-   */
-  verticalAlign?: VerticalAlign;
-  /**
-   * 셀 LIST_HEADER 속성(표 65)에서 세로 정렬 밖의 비트. 텍스트 방향(bit 0~2), 줄바꿈(bit 3~4) 등
-   * 모델이 아직 해석하지 않는 값이고, 다시 쓸 때 그대로 넣는다.
+   * 셀 LIST_HEADER 속성(표 65)에서 {@link ListProperties}와 위 필드 밖의 비트(bit 7~15, 21~31,
+   * 범위 밖 세로 정렬 3이면 bit 5~6). 한글은 bit 24, 26을 흔히
+   * 켜지만 HWPX에 대응 속성이 없고 뜻을 모른다. 다시 쓸 때 그대로 넣는다.
    */
   listUnknownBits?: number;
-  /** 셀에 맞게 텍스트를 줄인다. */
-  shrinkToFit?: boolean;
-  /** 셀 안에서 줄바꿈을 막는다. */
-  noWrap?: boolean;
-  /** 쪽마다 반복되는 제목 행으로 취급한다. */
-  header?: boolean;
   /** 셀 본문. 셀은 항상 문단을 최소 하나 담는다. */
   paragraphs: Paragraph[];
   /** 계산되는 셀일 때의 `=SUM(ABOVE)` 형태 수식. */
