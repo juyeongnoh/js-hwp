@@ -90,6 +90,7 @@
 | 82   | 표 70, bit 2 「줄 간격에 영향을 줄지 여부」 | 뜻만 기재 | 보충: 한글 2024 대화상자에는 이 값을 바꾸는 곳이 없었고, 저장소 HWP 파일 개체 440개에서 모두 0이었다. 글자처럼 취급한 사각형에서 켜면 그 줄 아래가 벌어진다. | 아래 E31. |
 | 83   | 표 65 「문단 리스트 헤더」 | 문단 수 INT16(2), 속성 UINT32(4), 전체 6 | 문단 수는 INT32(4)이고 속성 UINT32는 오프셋 4에 있다. 전체 8바이트다. 한글은 읽을 때 이 문단 수를 쓰지 않는 것으로 보인다. | 아래 E32. 셀에 문단 70,001개를 넣어 저장하자 `71 11 01 00`이 됐다. 저장소 LIST_HEADER 8천여 개는 모두 바이트 2–3이 0이었다. |
 | 84   | 표 71 「캡션 리스트」, 표 72 「캡션」 | 표 71: 캡션 12바이트(표 67 참조). 표 72: 속성 자료형 `UNIT`, 전체 14 | 표 71의 캡션은 표 72(14바이트)를 가리켜야 한다. 표 72의 속성은 UINT32다. 한글 2024 파일은 표 72의 14바이트 뒤에 0인 8바이트가 더 있어 캡션 LIST_HEADER가 8 + 14 + 8 = 30바이트였다. 캡션이 있으면 개체 공통 속성 bit 29가 켜지고(정정 81), 캡션 LIST_HEADER는 CTRL_HEADER의 첫 자식이다. 표에서는 TABLE 레코드보다 앞이다. | 아래 E32. `experiments/object-common-props/table-caption-bottom.hwp`, `rect-caption-bottom.hwp`. |
+| 85   | 표 65 「문단 리스트 헤더」, 속성 | bit 0~2 텍스트 방향(0 가로, 1 세로), bit 3~4 줄바꿈, bit 5~6 세로 정렬만 기재 | 보충: 텍스트 방향 2는 세로쓰기·영문 세움(HWPX `VERTICALALL`)이다. 셀 LIST_HEADER의 bit 16~20은 셀 속성으로 안 여백 지정, 셀 보호, 제목 셀, 양식 모드에서 편집 가능, `dirty`(HWPX `hp:tc`의 `hasMargin`, `protect`, `header`, `editable`, `dirty`)다. 한글은 bit 24, 26도 켜지만 뜻은 모른다. | 아래 E33. `experiments/list-header-properties`. |
 
 ## 2026-10-28 실험 기록
 
@@ -838,3 +839,29 @@ Windows용 한글 2024에서 2×2 표를 만들어 저장하고(`experiments/lis
 **확인하지 않은 것**
 
 - 셀이 아닌 LIST_HEADER에서 문단 수 65,536 초과. 캡션 끝 8바이트의 뜻.
+
+## 2026-11-20 실험 기록: 문단 리스트 속성 (표 65)
+
+### E33. 셀 LIST_HEADER 속성의 비트
+
+Windows용 한글 2024를 자동화(COM)로 조작해, 표 셀의 속성(`TablePropertyDialog`의 `ShapeTableCell`)을 하나씩 바꾸고 HWP와 HWPX로 저장했다(`experiments/list-header-properties/cell-props.hwp`, `.hwpx`). 셀 LIST_HEADER 속성(오프셋 4)의 비트와 HWPX 속성이 다음처럼 짝을 이뤘다.
+
+| 비트 | 값 | HWPX | 한글 자동화 항목 |
+| --- | --- | --- | --- |
+| 0~2 | 0, 1, 2 | `hp:subList textDirection` = `HORIZONTAL`, `VERTICAL`, `VERTICALALL` | `TextDirection` |
+| 3~4 | 0, 1, 2 | `hp:subList lineWrap` = `BREAK`, `SQUEEZE`, `KEEP` | `LineWrap` |
+| 5~6 | 0, 1, 2 | `hp:subList vertAlign` = `TOP`, `CENTER`, `BOTTOM` | `VertAlign` |
+| 16 | 1 | `hp:tc hasMargin` | `HasMargin` |
+| 17 | 1 | `hp:tc protect` | `Protected` |
+| 18 | 1 | `hp:tc header` | `Header` |
+| 19 | 1 | `hp:tc editable` | `Editable` |
+| 20 | 1 | `hp:tc dirty` | `Dirty` |
+
+반대로 비트 하나만 켠 파일을 한글로 열어 HWPX로 다시 저장해도 같은 속성이 켜졌다. 글자 방향 3·4, 줄바꿈 3, 세로 정렬 3인 파일은 HWPX에서 해당 속성이 빠졌다. bit 21~31은 HWPX에 나타나지 않았다. HWP로 다시 저장하면 모든 값이 그대로 남았다(정정 85).
+
+마지막 셀에 셀 보호를 켜면 bit 26도 켜졌다. 첫 셀에 켜거나 마지막 셀에 제목 셀을 켤 때는 켜지지 않았다. 저장소 HWP 셀 7,739개 중 bit 24는 3,560개, bit 26은 2,594개에 켜져 있었고, 모두 셀 보호가 꺼져 있었다.
+
+**확인하지 않은 것**
+
+- 비트가 본문 그림과 편집 동작에 주는 영향. `dirty`의 뜻. bit 24, 26의 뜻.
+- 셀이 아닌 LIST_HEADER(캡션, 머리말·꼬리말, 바탕쪽, 메모)에서 같은 비트.
