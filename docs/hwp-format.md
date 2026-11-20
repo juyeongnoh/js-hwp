@@ -445,6 +445,24 @@ PARA_HEADER (0)
 
 한글은 범위 밖 값(글자 방향 3~7, 줄바꿈 3, 세로 정렬 3)과 bit 21~31을 다시 저장할 때 지우지 않는다. 코덱은 bit 0~6을 모든 LIST_HEADER에 공통으로 읽는다(`readListHeader`, 모델 `ListProperties`). 범위 밖 글자 방향·줄바꿈은 필드에 그대로, 세로 정렬 3과 bit 7~31은 모르는 비트로 보존한다. 셀은 여기에 bit 16~20을 더 읽는다. 셀이 아닌 리스트(캡션, 머리말·꼬리말, 바탕쪽, 메모)의 모델은 아직 공통 해석을 쓰지 않고 속성을 그대로 보존한다.
 
+**셀 LIST_HEADER (46B 또는 47B).** 공통 헤더 8B, 셀 속성(표 80) 26B, 명세에 없는 12~13B다. 괄호는 HWPX와 `TableCell` 필드다.
+
+| 오프셋 | 자료형 | 설명 |
+| --- | --- | --- |
+| 0 | UINT32 | 문단 수 |
+| 4 | UINT32 | 리스트 속성 (위 표) |
+| 8 | UINT16 | 열 주소, 0부터 (`cellAddr colAddr`, `col`) |
+| 10 | UINT16 | 행 주소, 0부터 (`cellAddr rowAddr`, `row`) |
+| 12 | UINT16 | 열 병합 수 (`cellSpan colSpan`, `colSpan`) |
+| 14 | UINT16 | 행 병합 수 (`cellSpan rowSpan`, `rowSpan`) |
+| 16 | HWPUNIT | 셀 폭 (`cellSz width`, `width`) |
+| 20 | HWPUNIT | 셀 높이 (`cellSz height`, `height`) |
+| 24 | HWPUNIT16 ×4 | 안 여백: **왼쪽, 오른쪽, 위, 아래** (`cellMargin`, `margins`). 명세는 "4방향"이라고만 적었다 |
+| 32 | UINT16 | 테두리/배경 ID, 1부터 (`tc borderFillIDRef`, `borderFillId`는 0부터) |
+| 34 | 12B 또는 13B | **명세에 없음.** 첫 UINT32는 대개 셀 폭과 같고(저장소 7,674개 중 7,658개) 나머지는 0이다. 뜻 미확인 (`trailing`) |
+
+여백 순서와 테두리/배경 ID는 여백을 100, 200, 300, 400으로 정한 셀을 HWP와 HWPX로 저장해 대조했다(`experiments/list-header-properties/cell-margins-100-200-300-400.hwp`). 코덱은 병합 수와 끝 12~13B를 읽은 그대로 다시 쓴다. 새 셀은 한글처럼 끝에 셀 폭 UINT32와 0 9바이트를 쓴다(47B).
+
 ### 구역 정의 (`secd`)
 
 구역 첫 문단의 PARA_TEXT에 확장 컨트롤(코드 2)로 들어가고, 짝인 CTRL_HEADER의 ID가 `secd`다. 근거는 `hwp-5.0-errata.md`의 정정 54~61과 E23에 있다.

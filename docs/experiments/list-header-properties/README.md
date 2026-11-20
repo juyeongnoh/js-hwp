@@ -66,7 +66,21 @@
 - `resaved/resaved-protect-last-cell.hwp`에서도 bit 26은 그대로였다.
 - 이 폴더 밖의 저장소 HWP 셀 7,739개 중 2,594개에 bit 26이, 3,560개에 bit 24가 켜져 있었다. 이 셀들은 모두 셀 보호(bit 17)가 꺼져 있었다. 그러니 bit 26이 셀 보호만의 표시는 아니다. 자동화로 만든 표에서는 bit 24가 한 번도 켜지지 않았다.
 
+## 셀 여백 순서와 테두리/배경 ID
+
+`cell-margins-100-200-300-400.hwp`는 1×2 표의 첫 셀에 `HasMargin=1`, 여백 왼쪽 100, 오른쪽 200, 위 300, 아래 400을 적용해 저장한 파일이다. 다시 저장한 결과는 `resaved/resaved-cell-margins-100-200-300-400.hwp`, `.hwpx`다.
+
+| 위치 | 값 |
+| --- | --- |
+| 셀 LIST_HEADER 오프셋 24~31 (UINT16 ×4) | 100, 200, 300, 400 |
+| HWPX `hp:cellMargin` | `left="100" right="200" top="300" bottom="400"` |
+| 셀 LIST_HEADER 오프셋 32 (UINT16) | 3 |
+| HWPX `hp:tc borderFillIDRef` | 3 |
+| 셀 LIST_HEADER 오프셋 34 (UINT32) | 6122 = 셀 폭(오프셋 16) |
+
 ## 결론
+
+- **셀 여백(표 80)은 왼쪽, 오른쪽, 위, 아래 순서다.** 테두리/배경 ID는 HWPX `borderFillIDRef`와 같은 값(1부터)이다.
 
 - **bit 16~20은 HWPX `hp:tc`의 `hasMargin`, `protect`, `header`, `editable`, `dirty`다.** 저장할 때도, 비트만 켠 파일을 읽을 때도 같았다.
 - **bit 0~2는 글자 방향이다**(0 가로, 1 세로·영문 눕힘, 2 세로·영문 세움). HWPX `textDirection`의 `HORIZONTAL`, `VERTICAL`, `VERTICALALL`이다. bit 2만 켠 값 4도 범위 밖 값으로 처리되어 HWPX 속성이 빠졌다. 그래서 bit 2도 이 필드에 속한다.
@@ -86,6 +100,7 @@ python -I docs/experiments/scripts/make-cell-prop-one.py $D/base-2cell.hwp 0
 python -I docs/experiments/scripts/make-cell-prop-one.py $D/protect-first-cell.hwp 0 Protected=1
 python -I docs/experiments/scripts/make-cell-prop-one.py $D/protect-last-cell.hwp 1 Protected=1
 python -I docs/experiments/scripts/make-cell-prop-one.py $D/header-last-cell.hwp 1 Header=1
+python -I docs/experiments/scripts/make-cell-prop-one.py $D/cell-margins-100-200-300-400.hwp 0 HasMargin=1 MarginLeft=100 MarginRight=200 MarginTop=300 MarginBottom=400
 # 비트 n(16~31)을 켠 파일: 오프셋 6의 UINT16에 1 << (n - 16)
 for n in $(seq 16 31); do npx tsx docs/experiments/scripts/patch-list-header.ts $D/base-2cell.hwp $D/bit$n.hwp 0 6 $((1 << (n - 16))); done
 npx tsx docs/experiments/scripts/patch-list-header.ts $D/base-2cell.hwp $D/textdir-3.hwp 0 4 35   # 0x23

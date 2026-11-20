@@ -23,7 +23,7 @@
 - [x] **셀 LIST_HEADER 속성 비트** (2026-11-20): 글자 방향(bit 0~2), 줄바꿈(bit 3~4), 셀 속성 bit 16~20을 `TableCell` 필드로 읽고 쓴다(정정 85, E33, `experiments/list-header-properties`). 쓰이지 않던 `shrinkToFit`, `noWrap` 필드는 `lineWrap`(`ListLineWrap`)으로 바꿨다. bit 0~6은 `readListHeader`가 모든 LIST_HEADER에 공통으로 해석한다(`ListProperties`).
 - [ ] **LIST_HEADER 속성 bit 24, 26의 뜻**: 한글 문서 셀에 흔하지만 HWPX에 대응 속성이 없다. 마지막 셀에 셀 보호를 켜면 bit 26이 켜지는 것만 봤다. 지금은 `listUnknownBits`로 보존한다.
 - [ ] **셀이 아닌 LIST_HEADER의 속성 해석**: `readListHeader`가 bit 0~6을 공통으로 해석하지만, 캡션(`listProperties`)과 머리말·꼬리말·바탕쪽·메모(`listHeaderRest`)의 모델은 아직 그 결과를 쓰지 않고 속성을 그대로 보존한다. 같은 비트 배치인지 확인하지 않았다.
-- [ ] **셀 LIST_HEADER 34B 뒤 바이트 보존**: 한글은 셀 필드 26B 뒤에 12~13B(대개 셀 폭 UINT32 + 0)를 쓴다. 코덱은 읽지 않고 늘 `셀 폭 + 0 9B`(47B)로 다시 쓴다. 46B 셀이 47B가 되고, 그 값이 셀 폭과 다른 셀(저장소 16개)은 값을 잃는다.
+- [x] **셀 LIST_HEADER 34B 뒤 바이트 보존** (2026-11-20): 표 80 뒤 12~13B를 `TableCell.trailing`으로 보존하고, 병합 수를 읽은 그대로 둔다(0도). 저장소 HWP 파일의 LIST_HEADER 전체 바이트 왕복 테스트로 확인한다. 새 셀은 한글처럼 셀 폭과 0 9바이트를 쓴다.
 
 
 ## 한글 실측

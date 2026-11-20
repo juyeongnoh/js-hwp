@@ -1226,15 +1226,14 @@ function cellListProperties(cell: TableCell): number {
 function readTableCell(node: RecordNode, context: ParseContext): TableCell {
   // 리스트 헤더 뒤의 셀 필드(열·행·병합·크기·여백·테두리)는 26바이트다. 전체가 34바이트 미만이면
   // 예전 js-hwp가 쓴 6바이트 헤더다.
-  const { list, unknownBits, reader } = readListHeader(
-    node.payload,
-    node.payload.length < 34,
-  );
+  const legacy = node.payload.length < 34;
+  const { list, unknownBits, reader } = readListHeader(node.payload, legacy);
 
   const col = reader.optionalUint16();
   const row = reader.optionalUint16();
-  const colSpan = Math.max(1, reader.optionalUint16(1));
-  const rowSpan = Math.max(1, reader.optionalUint16(1));
+  // 병합 수는 파일 값 그대로 둔다(0도). 레코드가 짧아 없을 때만 1로 본다.
+  const colSpan = reader.optionalUint16(1);
+  const rowSpan = reader.optionalUint16(1);
   const width = reader.optionalUint32();
   const height = reader.optionalUint32();
   const margins = {
@@ -1244,6 +1243,8 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
     bottom: reader.optionalUint16(),
   };
   const borderFillRef = reader.optionalUint16();
+  // 표 80 뒤의 바이트(명세에 없음)는 그대로 보존한다. 예전 js-hwp의 6바이트 헤더 셀은 두지 않는다.
+  const trailing = legacy ? undefined : reader.rest().slice();
 
   return {
     col,
@@ -1255,6 +1256,7 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
     margins,
     ...idRefField(borderFillRef),
     ...readCellListProperties(list, unknownBits),
+    ...(trailing ? { trailing } : {}),
     paragraphs: readParagraphList(node.children, context),
   };
 }
@@ -2209,7 +2211,9 @@ function writeTableCell(
   header.uint16(cell.margins?.top ?? 0);
   header.uint16(cell.margins?.bottom ?? 0);
   header.uint16(toIdRef(cell.borderFillId, "셀 테두리 ID"));
-  header.uint32(cell.width).bytes(new Uint8Array(9));
+  // 읽은 셀은 표 80 뒤 바이트를 그대로, 새 셀은 한글처럼 셀 폭과 0 9바이트를 쓴다.
+  if (cell.trailing) header.bytes(cell.trailing);
+  else header.uint32(cell.width).bytes(new Uint8Array(9));
 
   writer.write(SectionTag.ListHeader, header);
   cell.paragraphs.forEach((paragraph, index) => {

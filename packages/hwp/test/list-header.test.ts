@@ -16,16 +16,17 @@ const files = ['docs/experiments', 'fixtures', 'scratch'].flatMap((d) =>
 )
 
 /**
- * 모든 LIST_HEADER의 앞 8바이트(문단 수 UINT32, 속성 UINT32, 정정 83). `gso ` 안은 건너뛴다.
- * 코덱이 `gso `를 unknown으로 보존하며 자식 레코드를 버리기 때문이다(BACKLOG).
+ * 모든 LIST_HEADER 페이로드의 앞 `length`바이트를 16진수로 모은다. 기본은 공통 헤더 8바이트(문단 수,
+ * 속성, 정정 83)이고, `Infinity`면 페이로드 전체다. `gso ` 안은 건너뛴다. 코덱이 `gso `를 unknown으로
+ * 보존하며 자식 레코드를 버리기 때문이다(BACKLOG).
  */
-function listHeads(bytes: Uint8Array): string[] {
+function listHeads(bytes: Uint8Array, length = 8): string[] {
   const c = CFB.read(bytes, { type: 'buffer' })
   const header = CFB.find(c, 'FileHeader')!.content as Uint8Array
   const compressed = (header[36]! & 1) === 1
   const out: string[] = []
   const walk = (n: RecordNode): void => {
-    if (n.tagId === SectionTag.ListHeader) out.push(Buffer.from(n.payload.subarray(0, 8)).toString('hex'))
+    if (n.tagId === SectionTag.ListHeader) out.push(Buffer.from(n.payload.subarray(0, length)).toString('hex'))
     if (n.tagId === SectionTag.CtrlHeader && String.fromCharCode(n.payload[3]!, n.payload[2]!, n.payload[1]!, n.payload[0]!) === 'gso ') return
     n.children.forEach(walk)
   }
@@ -39,11 +40,12 @@ function listHeads(bytes: Uint8Array): string[] {
 /** 문단 수를 일부러 틀리게 바꾼 실험 파일. 코덱은 실제 문단 수를 쓰므로 속성만 비교한다. */
 const WRONG_COUNT = /list-header-para-count[\\/]cell1-/
 
-describe('저장소 HWP 파일의 LIST_HEADER 앞 8바이트 왕복', () => {
+describe('저장소 HWP 파일의 LIST_HEADER 전체 바이트 왕복', () => {
+  // 원본 비트 보존: 읽고 그대로 쓴 LIST_HEADER가 원본과 바이트 단위로 같아야 한다.
   it.each(files.map((f) => [f.slice(root.length + 1), f]))('%s', (_, file) => {
     const bytes = new Uint8Array(readFileSync(file))
     const pick = WRONG_COUNT.test(file) ? (h: string[]) => h.map((x) => x.slice(8)) : (h: string[]) => h
-    expect(pick(listHeads(serializeHwp(parseHwp(bytes))))).toEqual(pick(listHeads(bytes)))
+    expect(pick(listHeads(serializeHwp(parseHwp(bytes)), Infinity))).toEqual(pick(listHeads(bytes, Infinity)))
   })
 
   it('문단 수가 틀린 LIST_HEADER는 실제 문단 수로 다시 쓴다', () => {
@@ -143,6 +145,18 @@ describe('셀 LIST_HEADER 속성 (experiments/list-header-properties, 한글 202
     })
     // 0x02(글자 방향) | 0x10(줄바꿈) | 0(위) | 0x1F0000(bit 16~20) | 0x5000000 = 0x051F0012
     expect(listHeads(serializeHwp(doc))).toEqual(['0100000012001f05', '0100000020000000'])
+  })
+
+  it('표 80 뒤 바이트: 읽은 셀은 그대로, 새 셀은 한글처럼 셀 폭과 0 9바이트(47B)로 쓴다', () => {
+    const read = firstTable('fixtures/hwp/fill.hwp').rows[0]!.cells[0]!
+    const doc = new DocumentBuilder().table([['a']]).build()
+    const table = doc.sections[0]!.paragraphs[0]!.runs[0]!.items[0] as Extract<Control, { type: 'table' }>
+    const fresh = table.rows[0]!.cells[0]!
+    expect(fresh.trailing).toBeUndefined()
+    const [head] = listHeads(serializeHwp(doc), Infinity)
+    const width = Buffer.from(new Uint32Array([fresh.width]).buffer).toString('hex')
+    expect(head!.slice(68)).toBe(width + '00'.repeat(9))
+    expect(read.trailing).toBeInstanceOf(Uint8Array)
   })
 
   it('빌더의 제목 행 셀에 제목 셀 비트(18)를 쓴다', () => {

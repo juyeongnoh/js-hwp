@@ -260,13 +260,19 @@ export interface ListProperties {
 }
 
 export interface TableCell extends ListProperties {
-  /** 0부터 시작하는 격자 위치. */
+  /** 열 주소 (0부터 시작) */
   col: number;
+  /** 행 주소 (0부터 시작) */
   row: number;
+  /** 열의 병합 개수 */
   colSpan: number;
+  /** 행의 병합 개수 */
   rowSpan: number;
+  /** 셀의 폭 */
   width: HwpUnit;
+  /** 셀의 높이 */
   height: HwpUnit;
+  /** 셀 4방향 여백 (왼쪽-오른쪽-위-아래 순서) */
   margins?: CellMargins;
   /** {@link HwpDocument.borderFills}의 인덱스. */
   borderFillId?: number;
@@ -286,6 +292,12 @@ export interface TableCell extends ListProperties {
    * 켜지만 HWPX에 대응 속성이 없고 뜻을 모른다. 다시 쓸 때 그대로 넣는다.
    */
   listUnknownBits?: number;
+  /**
+   * 셀 LIST_HEADER에서 셀 속성(표 80) 26B 뒤에 남는 바이트. 명세에 없다. 한글 2024는 12B나 13B를
+   * 쓰고, 첫 UINT32는 대개 셀 폭과 같고 나머지는 0이었다(뜻 미확인). 읽은 셀은 그대로 다시 붙인다.
+   * 없으면(새 셀) 한글처럼 셀 폭 UINT32와 0 9바이트를 쓴다.
+   */
+  trailing?: Uint8Array;
   /** 셀 본문. 셀은 항상 문단을 최소 하나 담는다. */
   paragraphs: Paragraph[];
   /** 계산되는 셀일 때의 `=SUM(ABOVE)` 형태 수식. */
