@@ -1,6 +1,16 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { CaptionSide, DocumentBuilder, NumberingKind, RelativeTo, TextWrap, type Control } from '@js-hwp/core'
+import {
+  CaptionSide,
+  DocumentBuilder,
+  ListLineWrap,
+  NumberingKind,
+  RelativeTo,
+  TextDirection,
+  TextWrap,
+  VerticalAlign,
+  type Control,
+} from '@js-hwp/core'
 import CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
 import { maybeInflate } from '../src/compress.js'
@@ -101,7 +111,7 @@ describe('개체 캡션', () => {
       width: 8504,
       gap: 850,
       maxWidth: placement.width,
-      listProperties: 0,
+      verticalAlign: VerticalAlign.Top,
       unknownBits: 0,
       trailing: [0, 0, 0, 0, 0, 0, 0, 0],
     })
@@ -115,6 +125,34 @@ describe('개체 캡션', () => {
     expect(tableCaptionRecords(serializeHwp(parseHwp(bytes)))).toEqual(records)
   })
 
+  it('그리기 개체 캡션을 읽는다 (한글 2024 사각형, 아래 캡션)', () => {
+    const doc = parseHwp(new Uint8Array(readFileSync(join(root, 'docs/experiments/object-common-props/rect-caption-bottom.hwp'))))
+    const rect = doc.sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items)).find((i) => i.type === 'unknown' && i.ctrlId === 'gso ')
+    const placement = rect?.type === 'unknown' ? rect.placement : undefined
+    expect(placement?.caption).toMatchObject({
+      side: CaptionSide.Bottom,
+      fullSize: false,
+      width: 8504,
+      gap: 850,
+      // 폭 기준이 문단이라 placement.width는 백분율×100(4539)이다. 캡션 최대 길이는 실제 폭이다.
+      maxWidth: 19300,
+      verticalAlign: VerticalAlign.Top,
+      unknownBits: 0,
+      trailing: [0, 0, 0, 0, 0, 0, 0, 0],
+    })
+    expect(placement?.caption?.paragraphs).toHaveLength(1)
+  })
+
+  it('그림 캡션을 SHAPE_COMPONENT 앞에 쓰고 다시 읽는다', () => {
+    const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const doc = new DocumentBuilder().image(png, { width: 1000, height: 1000, caption: '그림 캡션' }).build()
+    const bytes = serializeHwp(doc)
+    const props = Number.parseInt(objectHeaders(bytes)[0]!.slice(8, 16).match(/../g)!.reverse().join(''), 16)
+    expect((props >>> 29) & 1).toBe(1)
+    const picture = parseHwp(bytes).sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items)).find((i) => i.type === 'picture')
+    expect(picture?.type === 'picture' && text(picture.placement.caption!.paragraphs)).toBe('그림 캡션')
+  })
+
   it('캡션이 있는 표만 bit 29를 켜고 TABLE 앞에 캡션을 쓴다', () => {
     const withCaption = serializeHwp(new DocumentBuilder().table([['셀']], { caption: '표 캡션' }).build())
     const without = serializeHwp(new DocumentBuilder().table([['셀']]).build())
@@ -123,6 +161,42 @@ describe('개체 캡션', () => {
     expect((props(without) >>> 29) & 1).toBe(0)
     const table = parseHwp(withCaption).sections[0]!.paragraphs[0]!.runs[0]!.items[0]
     expect(table?.type === 'table' && text(table.placement.caption!.paragraphs)).toBe('표 캡션')
+  })
+})
+
+describe('캡션 리스트 속성 (표 65, experiments/caption-list-properties)', () => {
+  const dir = 'docs/experiments/caption-list-properties'
+  const caption = (name: string) => firstTable(`${dir}/${name}`).placement.caption!
+
+  it.each([
+    ['table-textdir-1.hwp', { textDirection: TextDirection.Vertical }],
+    ['table-textdir-2.hwp', { textDirection: TextDirection.VerticalAll }],
+    ['table-linewrap-1.hwp', { lineWrap: ListLineWrap.Squeeze }],
+    ['table-linewrap-2.hwp', { lineWrap: ListLineWrap.Keep }],
+    ['table-valign-1.hwp', { verticalAlign: VerticalAlign.Center }],
+    ['table-valign-2.hwp', { verticalAlign: VerticalAlign.Bottom }],
+    ['table-bit24.hwp', { listUnknownBits: 1 << 24 }],
+  ])('%s의 리스트 속성을 필드로 읽는다', (name, fields) => {
+    expect(caption(name)).toMatchObject(fields)
+  })
+
+  it('비트를 바꾼 캡션 LIST_HEADER와 문단을 원본과 같은 바이트로 다시 쓴다', () => {
+    for (const name of readdirSync(join(root, dir)).filter((f) => f.startsWith('table-') && f.endsWith('.hwp'))) {
+      const bytes = new Uint8Array(readFileSync(join(root, dir, name)))
+      expect(tableCaptionRecords(serializeHwp(parseHwp(bytes))), name).toEqual(tableCaptionRecords(bytes))
+    }
+  })
+
+  it('새 캡션은 세로 정렬 위(0)로, 고친 세로 정렬은 bit 5~6으로 쓴다', () => {
+    const listProps = (bytes: Uint8Array) => tableCaptionRecords(bytes)[0]!.split(':')[2]!.slice(8, 16)
+    const doc = new DocumentBuilder().table([['셀']], { caption: '캡션' }).build()
+    expect(listProps(serializeHwp(doc))).toBe('00000000')
+    const table = doc.sections[0]!.paragraphs[0]!.runs[0]!.items[0]
+    if (table?.type !== 'table') throw new Error('표가 없다')
+    table.placement.caption!.verticalAlign = VerticalAlign.Center
+    expect(listProps(serializeHwp(doc))).toBe('20000000')
+    table.placement.caption!.verticalAlign = VerticalAlign.Bottom
+    expect(listProps(serializeHwp(doc))).toBe('40000000')
   })
 })
 

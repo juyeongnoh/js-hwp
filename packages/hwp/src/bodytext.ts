@@ -1090,16 +1090,15 @@ function readTable(
     () => ({ cells: [] }),
   );
   // TABLE 레코드보다 앞에 오는 LIST_HEADER는 셀이 아니라 캡션이다.
-  let caption: Caption | undefined;
+  const caption = readLeadingCaption(node, SectionTag.Table, context);
   let seenTable = false;
   let target: Paragraph[] | undefined;
   for (const child of node.children) {
     if (child.tagId === SectionTag.Table) {
       seenTable = true;
       target = undefined;
-    } else if (child.tagId === SectionTag.ListHeader && !seenTable) {
-      caption = readCaption(child, context);
-      target = caption.paragraphs;
+    } else if (!seenTable) {
+      continue;
     } else if (child.tagId === SectionTag.ListHeader) {
       const cell = readTableCell(child, context);
       const row = rows[cell.row] ?? rows[rows.length - 1];
@@ -1128,15 +1127,18 @@ function readTable(
  * 0 8바이트). 문단은 이 레코드의 형제로 뒤따른다(정정 84).
  */
 function readCaption(node: RecordNode, context: ParseContext): Caption {
-  const { properties: listProperties, reader } = readListHeader(
-    node.payload,
-    false,
-  );
+  const {
+    list,
+    unknownBits: listUnknownBits,
+    reader,
+  } = readListHeader(node.payload, false);
   const properties = reader.optionalUint32();
   const width = reader.optionalUint32();
   const gap = reader.optionalUint16();
   const maxWidth = reader.optionalUint32();
   return {
+    ...list,
+    ...(listUnknownBits ? { listUnknownBits } : {}),
     side: bits(properties, 0, 1),
     fullSize: bit(properties, 2),
     width,
@@ -1144,10 +1146,30 @@ function readCaption(node: RecordNode, context: ParseContext): Caption {
     maxWidth,
     // 예전 js-hwp처럼 문단을 LIST_HEADER 아래에 둔 파일도 읽는다.
     paragraphs: readParagraphList(node.children, context),
-    listProperties,
     unknownBits: (properties & ~0b111) >>> 0,
     trailing: Array.from(reader.rest()),
   };
+}
+
+/**
+ * 개체 CTRL_HEADER의 자식 중 `stopTag` 레코드(표는 TABLE, 그리기 개체는 SHAPE_COMPONENT)보다
+ * 앞에 있는 캡션 LIST_HEADER와 그 형제 문단을 읽는다. 캡션이 있으면 개체 공통 속성 bit 29가
+ * 켜지고 캡션이 첫 자식이다(정정 81, 84). 코덱은 bit 29가 아니라 레코드 구조로 판단한다.
+ */
+function readLeadingCaption(
+  node: RecordNode,
+  stopTag: number,
+  context: ParseContext,
+): Caption | undefined {
+  let caption: Caption | undefined;
+  for (const child of node.children) {
+    if (child.tagId === stopTag) break;
+    if (child.tagId === SectionTag.ListHeader && !caption)
+      caption = readCaption(child, context);
+    else if (child.tagId === SectionTag.ParaHeader && caption)
+      caption.paragraphs.push(readParagraph(child, context));
+  }
+  return caption;
 }
 
 function writeCaption(
@@ -1163,7 +1185,8 @@ function writeCaption(
   const header = writeListHeader(
     new ByteWriter(),
     caption.paragraphs.length,
-    caption.listProperties ?? 0,
+    // 세로 정렬이 없으면 한글이 만든 아래 캡션처럼 위(0)로 쓴다(table-caption-bottom.hwp).
+    listPropertiesBits(caption, caption.listUnknownBits ?? 0, VerticalAlign.Top),
   )
     .uint32(properties >>> 0)
     .uint32(caption.width)
@@ -1269,7 +1292,10 @@ function readDrawingObject(
   const shapeNode = childWithTag(node, SectionTag.ShapeComponent);
   const reader = new ByteReader(node.payload);
   reader.uint32(); // ctrl id, already consumed by the caller's reader
-  const placement = readObjectPlacement(reader);
+  let placement = readObjectPlacement(reader);
+  // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
+  const caption = readLeadingCaption(node, SectionTag.ShapeComponent, context);
+  if (caption) placement = { ...placement, caption };
 
   if (pictureNode) {
     const p = new ByteReader(pictureNode.payload);
@@ -1288,7 +1314,6 @@ function readDrawingObject(
   }
 
   void shapeNode;
-  void context;
   return {
     type: "unknown",
     ctrlId: CtrlId.DrawingObject,
@@ -2230,14 +2255,17 @@ function writeTableCell(
 
 function writePicture(
   writer: RecordWriter,
-  _doc: HwpDocument,
+  doc: HwpDocument,
   picture: Extract<Control, { type: "picture" }>,
 ): void {
   const header = new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject));
-  // 그림 캡션은 아직 쓰지 않는다. 그림 쓰기 자체를 한글에서 검증하지 못했다(BACKLOG).
-  writeObjectPlacement(header, picture.placement, 1, false);
+  const { caption } = picture.placement;
+  writeObjectPlacement(header, picture.placement, 1, caption !== undefined);
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
+    // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
+    // 그림 쓰기 자체는 아직 한글에서 검증하지 못했다(BACKLOG).
+    if (caption) writeCaption(writer, doc, caption, picture.placement.width);
     const shape = new ByteWriter()
       .uint32(0) // instance id
       .int32(0) // x offset in group

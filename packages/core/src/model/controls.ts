@@ -109,10 +109,14 @@ export enum CaptionSide {
 /**
  * 개체 캡션(표 71~73). 파일에서는 개체 CTRL_HEADER의 첫 자식 LIST_HEADER와 그 뒤 문단이고,
  * 개체 공통 속성 bit 29가 켜진다.
+ *
+ * 캡션 리스트는 문단 리스트 헤더(표 65)로 시작하므로 리스트 속성({@link ListProperties})을 가진다.
+ * 대화상자의 "오른쪽 가운데", "오른쪽 아래"에서 가운데·아래가 세로 정렬(bit 5~6)이다(E34).
+ * 세로 정렬이 없으면 한글이 만든 아래 캡션처럼 위로 쓴다.
  */
-export interface Caption {
+export interface Caption extends ListProperties {
   side: CaptionSide;
-  /** 캡션 폭에 개체의 여백을 포함한다(가로 방향일 때만). */
+  /** 여백 부분까지 너비 확대 (개체 속성 -> 캡션에서 확인). */
   fullSize?: boolean;
   /** 캡션 폭. 왼쪽·오른쪽 캡션일 때만 쓴다. */
   width: HwpUnit;
@@ -122,9 +126,12 @@ export interface Caption {
   maxWidth?: HwpUnit;
   paragraphs: Paragraph[];
 
-  /** 문단 리스트 헤더의 속성(UINT32, 오프셋 4). 다시 쓸 때 그대로 넣는다. */
-  listProperties?: number;
-  /** 캡션 속성에서 bit 0~2 밖의 비트. */
+  /**
+   * 리스트 속성(표 65, LIST_HEADER 오프셋 4)에서 {@link ListProperties} 밖의 비트(bit 7~31,
+   * 범위 밖 세로 정렬 3이면 bit 5~6). 다시 쓸 때 그대로 넣는다.
+   */
+  listUnknownBits?: number;
+  /** 캡션 속성(표 72)에서 bit 0~2 밖의 비트. */
   unknownBits?: number;
   /** 캡션 정보(14B) 뒤에 남은 바이트. 한글 2024는 0을 8바이트 쓴다. */
   trailing?: number[];
