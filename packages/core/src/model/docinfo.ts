@@ -162,13 +162,6 @@ export const NO_BORDER: BorderLine = {
   color: rgb(0, 0, 0),
 };
 
-export enum FillKind {
-  None = 0,
-  Color = 1,
-  Gradient = 2,
-  Image = 3,
-}
-
 /**
  * 명세 표 29는 1부터 매기지만 실제 값은 0부터다. 한글 파일의 값을 0~6으로 바꿔
  * 렌더링해 확인했다(6은 무늬 없음). 없음은 -1로 저장된다.
@@ -184,7 +177,6 @@ export enum HatchStyle {
 }
 
 export interface ColorFill {
-  kind: FillKind.Color;
   background: Rgb;
   /**
    * 배경 위에 그려지는 해치 무늬. 무늬가 없으면 style이 {@link HatchStyle.None}이다.
@@ -192,14 +184,14 @@ export interface ColorFill {
    * color를 버리지 않는다.
    */
   pattern: { style: HatchStyle; color: Rgb };
-  /** HWPX winBrush의 alpha를 0-100으로 환산한 값. HWP에는 대응하는 필드가 없다. */
-  alpha?: number;
   /**
-   * HWP 채우기 정보 끝에 켜진 종류마다 붙는 1바이트. 명세에 없고 의미를 모른다.
-   * rhwp는 투명도로 해석하지만, 0·50·128·255로 바꿔도 macOS 한글 표시가 같았다.
-   * 왕복 보존용으로 원시 값만 담는다.
+   * 투명도 0~255. 0은 불투명, 255는 완전히 투명하다(보통의 alpha와 방향이 반대다). 채우기 정보 끝에
+   * 켜진 종류마다 붙는 1바이트로, 블록과 같은 순서(단색, 그러데이션, 그림)로 각 종류에 적용된다.
+   * 한글 2024 그리기 개체 "채우기" 탭의 투명도 칸이고 % × 255로 저장한다(30% → 77, 200 → 78%).
+   * 화면에 적용되는 곳은 그리기 개체 채우기뿐이다. 셀·문단·쪽·글자 배경 대화상자에는 이 칸이 없고,
+   * 값이 있어도 그리지 않지만 다시 저장할 때 보존한다(정정 92, E41, `experiments/fill-alpha`). HWPX의 `alpha`다. 없으면 0으로 쓴다.
    */
-  unknown?: number;
+  transparency?: number;
 }
 
 export enum GradientKind {
@@ -214,7 +206,6 @@ export enum GradientKind {
 }
 
 export interface GradientFill {
-  kind: FillKind.Gradient;
   type: GradientKind;
   /** 도 단위, 0-359. */
   angle: number;
@@ -228,10 +219,8 @@ export interface GradientFill {
   stops?: number[];
   /** 번짐 정도의 중심, 0-100. HWP의 추가 채우기 속성에 담긴다. */
   stepCenter?: number;
-  /** HWPX gradation의 alpha. {@link ColorFill.alpha} 참조. */
-  alpha?: number;
-  /** {@link ColorFill.unknown} 참조. */
-  unknown?: number;
+  /** {@link ColorFill.transparency} 참조. */
+  transparency?: number;
 }
 
 export enum ImageFillMode {
@@ -281,28 +270,42 @@ export enum ImageEffect {
 }
 
 export interface ImageFill {
-  kind: FillKind.Image;
   mode: ImageFillMode;
   effect?: ImageEffect;
   /** {@link HwpDocument.binData}의 인덱스. 파일의 BinItem ID는 1부터라 1을 뺀 값이다. */
   binDataId: number;
   brightness?: number;
   contrast?: number;
-  /** {@link ColorFill.unknown} 참조. */
-  unknown?: number;
-}
-
-export interface NoFill {
-  kind: FillKind.None;
+  /** {@link ColorFill.transparency} 참조. */
+  transparency?: number;
 }
 
 /**
- * 채우기 정보(표 28). 종류 값은 비트 플래그지만 한글은 하나만 저장하고, 여러 비트가
- * 켜진 파일은 이미지 > 그러데이션 > 단색 순으로 하나만 그린다(macOS 한글 실측).
+ * 채우기 정보(표 28). 종류 값은 비트 플래그(단색 1, 그림 2, 그러데이션 4)이고, 있는 블록으로
+ * 정한다. 블록은 단색, 그러데이션, 그림 순으로 저장된다.
+ *
+ * Windows용 한글 2024의 셀 배경·그리기 개체 채우기 대화상자는 색 채우기 없음·색·그러데이션 중
+ * 하나와 그림(체크박스)을 함께 고를 수 있어 단색 + 그림, 그러데이션 + 그림을 저장한다. 대화상자로
+ * 만들 수 없는 단색 + 그러데이션도 열고 다시 저장할 때 그대로 둔다(정정 92, E40,
+ * `experiments/fill-multi-kind-priority/windows-2024`). 그릴 때는 그림 > 그러데이션 > 단색 순으로
+ * 하나가 보였다(macOS 한글). macOS 한글 대화상자는 셋 중 하나만 고른다.
  */
-export type Fill = NoFill | ColorFill | GradientFill | ImageFill;
+export interface Fill {
+  /** bit 0. */
+  color?: ColorFill;
+  /** bit 2. */
+  gradient?: GradientFill;
+  /** bit 1. */
+  image?: ImageFill;
+  /**
+   * 추가 채우기 속성에서 모델이 해석하지 않은 바이트. 그러데이션이면 번짐 중심 1바이트 뒤, 아니면
+   * 전부다. 한글은 쓰지 않는다. 그대로 붙인다.
+   */
+  extraProperties?: Uint8Array;
+}
 
-export const NO_FILL: NoFill = { kind: FillKind.None };
+/** 채우기 없음. 종류 0과 추가 속성 길이 0만 쓴다. */
+export const NO_FILL: Readonly<Fill> = Object.freeze({});
 
 /**
  * 테두리와 채우기의 쌍. 셀, 문단, 쪽, 도형이 전부 인덱스로 이것을 참조한다.

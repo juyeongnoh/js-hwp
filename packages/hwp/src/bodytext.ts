@@ -1448,12 +1448,12 @@ export function readShapeComponent(
         color: r.color(),
         offsetX: r.int32(),
         offsetY: r.int32(),
-        alpha: 0,
+        transparency: 0,
       };
       shape.instanceId = r.uint32();
       const afterInstanceId = r.uint8();
       if (afterInstanceId) shape.afterInstanceId = afterInstanceId;
-      shape.shadow.alpha = r.uint8();
+      shape.shadow.transparency = r.uint8();
     }
   }
   if (r.hasMore()) shape.trailing = r.rest();
@@ -1624,7 +1624,7 @@ export function writeShapeComponent(shape: ShapeComponent): ByteWriter {
       .int32(shadow.offsetY)
       .uint32(instanceId)
       .uint8(shape.afterInstanceId ?? 0)
-      .uint8(shadow.alpha);
+      .uint8(shadow.transparency);
   }
   if (shape.trailing) w.bytes(shape.trailing);
   return w;

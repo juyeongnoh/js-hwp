@@ -1,5 +1,10 @@
-import { createDocument, FillKind, LineStyle, NO_COLOR, NO_FILL, parseColor } from '@js-hwp/core'
+import { createDocument, LineStyle, NO_COLOR, NO_FILL, parseColor } from '@js-hwp/core'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
+import { maybeInflate } from '../src/compress.js'
+import { parseHwp, serializeHwp } from '../src/document.js'
 import { parseDocInfo, serializeDocInfo } from '../src/docinfo.js'
 import { parseRecords, serializeRecords } from '../src/record.js'
 import { DocInfoTag } from '../src/tags.js'
@@ -166,7 +171,7 @@ describe('표 28 채우기 정보', () => {
   }
   const u32 = (n: number) => [n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff]
 
-  // 실제 HWP 샘플의 BorderFill: 단색, 무늬 없음, 추가 속성 0, 알 수 없는 1바이트.
+  // 실제 HWP 샘플의 BorderFill: 단색, 무늬 없음, 추가 속성 0, 투명도 1바이트.
   const sampleTail = [1, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0x99, 0x99, 0x99, 0, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0]
   // macOS 한글이 저장한 그러데이션: 빨강→파랑 계열, 기울임 90, 중심 0/0, 번짐 정도 255, 번짐 중심 50.
   const gradientTail = [
@@ -178,7 +183,7 @@ describe('표 28 채우기 정보', () => {
 
   it('한글이 쓴 단색 채우기의 배치를 읽는다', () => {
     expect(parseTail(sampleTail)).toEqual({
-      kind: FillKind.Color, background: NO_COLOR, pattern: { style: -1, color: parseColor(0x999999) }, unknown: 0,
+      color: { background: NO_COLOR, pattern: { style: -1, color: parseColor(0x999999) }, transparency: 0 },
     })
   })
 
@@ -189,8 +194,10 @@ describe('표 28 채우기 정보', () => {
   it('한글이 쓴 그러데이션 채우기를 읽고 같은 바이트로 쓴다', () => {
     const fill = parseTail(gradientTail)
     expect(fill).toEqual({
-      kind: FillKind.Gradient, type: 1, angle: 90, centerX: 0, centerY: 0, step: 255,
-      colors: [parseColor(0x86afdc), parseColor(0x2d629c)], stops: undefined, stepCenter: 50, unknown: 0,
+      gradient: {
+        type: 1, angle: 90, centerX: 0, centerY: 0, step: 255,
+        colors: [parseColor(0x86afdc), parseColor(0x2d629c)], stops: undefined, stepCenter: 50, transparency: 0,
+      },
     })
     expect([...fillBytes(fill)]).toEqual(gradientTail)
   })
@@ -198,7 +205,7 @@ describe('표 28 채우기 정보', () => {
   it('한글이 쓴 이미지 채우기를 명암·밝기 순으로 읽고 같은 바이트로 쓴다', () => {
     const fill = parseTail(imageTail)
     expect(fill).toEqual({
-      kind: FillKind.Image, mode: 15, contrast: 75, brightness: 50, effect: 0, binDataId: 0, unknown: 0,
+      image: { mode: 15, contrast: 75, brightness: 50, effect: 0, binDataId: 0, transparency: 0 },
     })
     expect([...fillBytes(fill)]).toEqual(imageTail)
   })
@@ -207,7 +214,7 @@ describe('표 28 채우기 정보', () => {
     expect([...fillBytes(NO_FILL)]).toEqual([0, 0, 0, 0, 0, 0, 0, 0])
   })
 
-  describe('여러 비트가 켜지면 한글처럼 이미지 > 그러데이션 > 단색 하나만 남긴다', () => {
+  describe('여러 비트가 켜진 채우기는 모든 블록과 투명도를 남기고 같은 바이트로 쓴다', () => {
     const color = [0x11, 0x22, 0x33, 0, 0x44, 0x55, 0x66, 0, ...u32(2)]
     const gradient = gradientTail.slice(4, 4 + 29)
     const image = imageTail.slice(4, 10)
@@ -215,24 +222,57 @@ describe('표 28 채우기 정보', () => {
       ...u32(kind),
       ...(kind & 1 ? color : []), ...(kind & 4 ? gradient : []), ...(kind & 2 ? image : []),
       ...(kind & 4 ? [...u32(1), 50] : u32(0)),
-      ...[1, 4, 2].filter(bit => kind & bit).map(() => 0),
+      ...[1, 4, 2].filter(bit => kind & bit).map((bit) => 10 + bit),
     ]
-    it.each([
-      [3, FillKind.Image],
-      [5, FillKind.Gradient],
-      [6, FillKind.Image],
-      [7, FillKind.Image],
-    ])('종류 %s → %s', (kind, expected) => {
+    it.each([3, 5, 6, 7])('종류 %s', (kind) => {
       const fill = parseTail(build(kind))
-      expect(fill.kind).toBe(expected)
-      // 앞 블록을 건너뛴 뒤에도 남은 블록의 값이 어긋나지 않는다.
-      if (fill.kind === FillKind.Image) expect([fill.contrast, fill.brightness, fill.binDataId]).toEqual([75, 50, 0])
-      if (fill.kind === FillKind.Gradient) expect([fill.step, fill.stepCenter]).toEqual([255, 50])
+      expect(Boolean(fill.color)).toBe(Boolean(kind & 1))
+      expect(Boolean(fill.image)).toBe(Boolean(kind & 2))
+      expect(Boolean(fill.gradient)).toBe(Boolean(kind & 4))
+      // 앞 블록 뒤에서도 값이 어긋나지 않고, 투명도는 블록 순서(단색, 그러데이션, 그림)로 붙는다.
+      if (fill.color) expect([fill.color.pattern.style, fill.color.transparency]).toEqual([2, 11])
+      if (fill.gradient) expect([fill.gradient.step, fill.gradient.stepCenter, fill.gradient.transparency]).toEqual([255, 50, 14])
+      if (fill.image) expect([fill.image.contrast, fill.image.brightness, fill.image.binDataId, fill.image.transparency]).toEqual([75, 50, 0, 12])
+      expect([...fillBytes(fill)]).toEqual(build(kind))
     })
   })
 
+  it('추가 채우기 속성의 모르는 바이트를 보존한다', () => {
+    const tail = [1, 0, 0, 0, ...new Array(12).fill(0), ...u32(2), 7, 8, 0]
+    const fill = parseTail(tail)
+    expect([...fill.extraProperties!]).toEqual([7, 8])
+    expect([...fillBytes(fill)]).toEqual(tail)
+    const gradientExtra = [...gradientTail.slice(0, 33), ...u32(2), 50, 9, 0]
+    expect([...fillBytes(parseTail(gradientExtra))]).toEqual(gradientExtra)
+  })
+
   it('이미지 채우기의 BinItem ID는 1부터 기록한다', () => {
-    const bytes = fillBytes({ kind: FillKind.Image, mode: 0, brightness: 0, contrast: 0, effect: 0, binDataId: 2 })
+    const bytes = fillBytes({ image: { mode: 0, brightness: 0, contrast: 0, effect: 0, binDataId: 2 } })
     expect([...bytes.slice(0, 10)]).toEqual([2, 0, 0, 0, 0, 0, 0, 0, 3, 0])
+  })
+})
+
+describe('여러 종류가 켜진 BorderFill (experiments/fill-multi-kind-priority)', () => {
+  const dir = join(__dirname, '../../../docs/experiments/fill-multi-kind-priority')
+  const borderFills = (bytes: Uint8Array): string[] => {
+    const c = CFB.read(bytes, { type: 'buffer' })
+    const compressed = ((CFB.find(c, 'FileHeader')!.content as Uint8Array)[36]! & 1) === 1
+    const data = maybeInflate(new Uint8Array(CFB.find(c, 'DocInfo')!.content as Uint8Array), compressed)
+    return parseRecords(data)
+      .filter((r) => r.tagId === DocInfoTag.BorderFill)
+      .map((r) => Buffer.from(r.payload).toString('hex'))
+  }
+
+  // Windows 한글 2024는 이 파일들을 열고 다시 저장해도 BorderFill을 바꾸지 않았다(windows-2024/).
+  it.each(['3-color-image', '5-color-gradient', '6-gradient-image', '7-all'])('%s를 원본과 같은 바이트로 쓴다', (name) => {
+    const bytes = new Uint8Array(readFileSync(join(dir, `${name}.hwp`)))
+    const resaved = new Uint8Array(readFileSync(join(dir, 'windows-2024', `${name}.hwp`)))
+    expect(borderFills(resaved)).toEqual(borderFills(bytes))
+    expect(borderFills(serializeHwp(parseHwp(bytes)))).toEqual(borderFills(bytes))
+    const fill = parseHwp(bytes).borderFills[3]!.fill!
+    const kind = Number(name[0])
+    expect([Boolean(fill.color), Boolean(fill.image), Boolean(fill.gradient)]).toEqual([
+      Boolean(kind & 1), Boolean(kind & 2), Boolean(kind & 4),
+    ])
   })
 })

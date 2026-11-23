@@ -498,8 +498,8 @@ export interface ShapeComponent {
   line?: ShapeLine;
   /**
    * 채우기 정보(표 81, 28). 그리기 개체에서 테두리 선 바로 뒤에 있다. DocInfo 테두리/배경과 같은
-   * 배치로 읽는다. 다시 썼을 때 원본과 같은 바이트가 되지 않는 채우기(여러 종류가 켜진 것 등)는
-   * 두지 않고 `trailing`에 원본 그대로 남긴다.
+   * 배치다. 한글 대화상자는 색 또는 그러데이션과 그림을 함께 저장한다(정정 92). 다시 썼을 때 원본과
+   * 같은 바이트가 되지 않는 채우기(짧은 블록 등)는 두지 않고 `trailing`에 원본 그대로 남긴다.
    */
   fill?: Fill;
   /**
@@ -551,8 +551,11 @@ export interface ShapeShadow {
   /** 가로·세로 이동. 1mm가 283이다. */
   offsetX: SHwpUnit;
   offsetY: SHwpUnit;
-  /** 투명도 0~255. 대화상자의 30%가 77이다. HWPX `alpha`와 같다. */
-  alpha: number;
+  /**
+   * 투명도 0~255. 0은 불투명, 255는 완전히 투명하다. 대화상자의 30%가 77이다. HWPX `hp:shadow`의
+   * `alpha`다. {@link ColorFill.transparency}와 같은 방향이다.
+   */
+  transparency: number;
 }
 
 /** 그리기 개체 안에 그려지는 텍스트. */
@@ -591,7 +594,7 @@ export interface PictureControl extends ShapeBase {
   brightness?: number;
   contrast?: number;
   effect?: ImageEffect;
-  alpha?: number;
+  transparency?: number;
   /** "원래 크기로" 기능을 위해 보관하는 원본 크기. */
   originalSize?: { width: HwpUnit; height: HwpUnit };
 }

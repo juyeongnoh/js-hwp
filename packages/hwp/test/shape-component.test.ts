@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import {
   ArrowSize,
   ArrowStyle,
-  FillKind,
   HatchStyle,
   LineEndCap,
   LineStyle,
@@ -129,10 +128,11 @@ describe('개체 요소 속성 값 (한글 2024)', () => {
     })
     // 테두리 선 뒤의 채우기 정보 21바이트: 흰색 단색, 무늬 없음.
     expect(shape.fill).toEqual({
-      kind: FillKind.Color,
-      background: { r: 0xff, g: 0xff, b: 0xff, unknown: 0 },
-      pattern: { style: HatchStyle.None, color: { r: 0, g: 0, b: 0, unknown: 0 } },
-      unknown: 0,
+      color: {
+        background: { r: 0xff, g: 0xff, b: 0xff, unknown: 0 },
+        pattern: { style: HatchStyle.None, color: { r: 0, g: 0, b: 0, unknown: 0 } },
+        transparency: 0,
+      },
     })
     // 그 뒤의 명세에 없는 22바이트: 그림자 없음(색은 기본 회색)과 인스턴스 ID.
     expect(shape.shadow).toEqual({
@@ -140,7 +140,7 @@ describe('개체 요소 속성 값 (한글 2024)', () => {
       color: { r: 0xb2, g: 0xb2, b: 0xb2, unknown: 0 },
       offsetX: 0,
       offsetY: 0,
-      alpha: 0,
+      transparency: 0,
     })
     expect(shape.instanceId).toBe(0x0a8c5e98)
     expect(shape.afterInstanceId).toBeUndefined()
@@ -177,6 +177,38 @@ describe('Outline style (experiments/shape-outline-style, 한글 2024)', () => {
   })
 })
 
+describe('채우기 (experiments/shape-fill, 한글 2024)', () => {
+  const fillOf = (file: string) => {
+    const shape = drawingObjects(load(`docs/experiments/shape-fill/${file}.hwp`))[0]!.shapeComponent!
+    // 채우기와 그림자를 모두 모델로 읽어 남는 바이트가 없다.
+    expect(shape.shadow).toBeDefined()
+    expect(shape.trailing).toBeUndefined()
+    return shape.fill!
+  }
+
+  it('채우기 없음, 그러데이션, 그림', () => {
+    expect(fillOf('none')).toEqual({})
+    expect(fillOf('gradient').gradient).toMatchObject({ angle: 90, step: 255, stepCenter: 50, transparency: 0 })
+    expect(fillOf('image')).toEqual({ image: expect.objectContaining({ mode: 5, binDataId: 0, transparency: 0 }) })
+  })
+
+  it('채우기 투명도 30%는 켜진 종류마다 77이다', () => {
+    expect(fillOf('color-alpha').color!.transparency).toBe(77)
+    const colorImage = fillOf('color-image-alpha')
+    expect([colorImage.color!.transparency, colorImage.image!.transparency]).toEqual([77, 77])
+    const gradientImage = fillOf('gradient-image')
+    expect([gradientImage.gradient!.transparency, gradientImage.image!.transparency]).toEqual([77, 77])
+    expect(gradientImage.color).toBeUndefined()
+  })
+
+  it('색 + 그림', () => {
+    const fill = fillOf('color-image')
+    expect(fill.color).toBeDefined()
+    expect(fill.image).toBeDefined()
+    expect(fill.gradient).toBeUndefined()
+  })
+})
+
 describe('그림자 (experiments/shape-shadow, 한글 2024)', () => {
   const shapeOf = (file: string) =>
     drawingObjects(load(`docs/experiments/shape-shadow/${file}`))[0]!.shapeComponent!
@@ -188,7 +220,7 @@ describe('그림자 (experiments/shape-shadow, 한글 2024)', () => {
       color: { r: 0xb2, g: 0xb2, b: 0xb2, unknown: 0 },
       offsetX: 283,
       offsetY: 566,
-      alpha: 77,
+      transparency: 77,
     })
     // HWPX hp:rect instid="181272362"
     expect(shape.instanceId).toBe(181272362)
@@ -215,7 +247,7 @@ describe('그림자 (experiments/shape-shadow, 한글 2024)', () => {
     const bytes = new Uint8Array(readFileSync(join(root, path)))
     const doc = parseHwp(bytes)
     const shape = drawingObjects(doc)[0]!.shapeComponent!
-    shape.shadow = { ...shape.shadow!, kind: ShapeShadowKind.ScaleNarrow, offsetX: 283, offsetY: 566, alpha: 77 }
+    shape.shadow = { ...shape.shadow!, kind: ShapeShadowKind.ScaleNarrow, offsetX: 283, offsetY: 566, transparency: 77 }
     const [after] = shapeComponents(serializeHwp(doc))
     const [expected] = shapeComponents(new Uint8Array(readFileSync(join(root, 'docs/experiments/shape-shadow/shadow-1.hwp'))))
     // 한글이 같은 값으로 저장한 shadow-1과 SHAPE_COMPONENT가 같다.
@@ -274,8 +306,7 @@ describe('읽은 채우기를 고치면', () => {
     const bytes = new Uint8Array(readFileSync(join(root, path)))
     const doc = parseHwp(bytes)
     const shape = drawingObjects(doc)[0]!.shapeComponent!
-    const fill = shape.fill as Extract<Fill, { kind: FillKind.Color }>
-    fill.background = { r: 0x12, g: 0x34, b: 0x56, unknown: 0 }
+    shape.fill!.color!.background = { r: 0x12, g: 0x34, b: 0x56, unknown: 0 }
 
     const [before] = shapeComponents(bytes).map((h) => Buffer.from(h, 'hex'))
     const [after] = shapeComponents(serializeHwp(doc)).map((h) => Buffer.from(h, 'hex'))
@@ -290,7 +321,7 @@ describe('읽은 채우기를 고치면', () => {
     const path = 'docs/experiments/object-common-props/rect-caption-bottom.hwp'
     const doc = parseHwp(new Uint8Array(readFileSync(join(root, path))))
     const shape = drawingObjects(doc)[0]!.shapeComponent!
-    shape.fill = { kind: FillKind.None }
+    shape.fill = {}
     const [after] = shapeComponents(serializeHwp(doc)).map((h) => Buffer.from(h, 'hex'))
     const at = 8 + 42 + 2 + 48 * 3 + 13
     const [before] = shapeComponents(new Uint8Array(readFileSync(join(root, path)))).map((h) =>
@@ -388,10 +419,11 @@ describe('readShapeComponent', () => {
       ...sample(),
       line: line(),
       fill: {
-        kind: FillKind.Color,
-        background: { r: 1, g: 2, b: 3, unknown: 0 },
-        pattern: { style: HatchStyle.None, color: { r: 0, g: 0, b: 0, unknown: 0 } },
-        unknown: 0,
+        color: {
+          background: { r: 1, g: 2, b: 3, unknown: 0 },
+          pattern: { style: HatchStyle.None, color: { r: 0, g: 0, b: 0, unknown: 0 } },
+          transparency: 0,
+        },
       },
       trailing: Uint8Array.of(9, 9),
     }
@@ -400,20 +432,26 @@ describe('readShapeComponent', () => {
     expect(readShapeComponent(bytes)).toEqual(shape)
   })
 
-  it('다시 쓰면 바이트가 달라지는 채우기는 trailing에 원본 그대로 남긴다', () => {
+  it('여러 종류가 켜진 채우기와 추가 속성 바이트도 모델로 읽는다', () => {
     expect(lineBytes()).toHaveLength(13)
-    // 단색과 이미지가 함께 켜진 채우기(종류 3). 리더는 이미지 하나만 남긴다.
+    // 단색과 그림이 함께 켜진 채우기(종류 3). 투명도는 종류마다 하나씩.
     const multi = [
       3, 0, 0, 0, ...[255, 255, 255, 0], ...[0, 0, 0, 0], ...[255, 255, 255, 255],
-      ...[0, 0, 0, 0, 1, 0], ...[0, 0, 0, 0], 0, 0,
+      ...[5, 0, 0, 0, 1, 0], ...[0, 0, 0, 0], 77, 77,
     ]
     const shape = readShapeComponent(withTail(multi))!
     expect(shape.line).toEqual(line())
-    expect(shape.fill).toBeUndefined()
-    expect([...shape.trailing!]).toEqual(multi)
+    expect(shape.fill?.color?.transparency).toBe(77)
+    expect(shape.fill?.image).toMatchObject({ mode: 5, binDataId: 0, transparency: 77 })
+    expect(shape.trailing).toBeUndefined()
     // 추가 채우기 속성에 모르는 바이트가 있는 단색 채우기.
     const extra = [1, 0, 0, 0, ...new Array(12).fill(0), 2, 0, 0, 0, 7, 7, 0]
-    expect([...readShapeComponent(withTail(extra))!.trailing!]).toEqual(extra)
+    const extraShape = readShapeComponent(withTail(extra))!
+    expect([...extraShape.fill!.extraProperties!]).toEqual([7, 7])
+    expect(hex(writeShapeComponent(extraShape).finish())).toBe(hex(withTail(extra)))
+  })
+
+  it('다시 쓰면 바이트가 달라지는 채우기는 trailing에 원본 그대로 남긴다', () => {
     // 단색 블록 중간에서 끝나는 짧은 채우기.
     const short = [1, 0, 0, 0, 255, 255]
     const shortShape = readShapeComponent(withTail(short))!
@@ -426,16 +464,16 @@ describe('readShapeComponent', () => {
     color: { r: 0xb2, g: 0xb2, b: 0xb2, unknown: 0 },
     offsetX: 0,
     offsetY: 0,
-    alpha: 0,
+    transparency: 0,
   })
-  const fill = (): Fill => ({ kind: FillKind.None })
+  const fill = (): Fill => ({})
 
   it('그림자와 인스턴스 ID를 쓰고 다시 읽는다', () => {
     const shape: ShapeComponent = {
       ...sample(),
       line: line(),
       fill: fill(),
-      shadow: { ...shadow(), kind: ShapeShadowKind.ShearRightBottom, offsetX: -283, alpha: 255 },
+      shadow: { ...shadow(), kind: ShapeShadowKind.ShearRightBottom, offsetX: -283, transparency: 255 },
       instanceId: 0xffffffff,
       afterInstanceId: 7,
     }
@@ -455,7 +493,7 @@ describe('readShapeComponent', () => {
     expect(() => writeShapeComponent({ ...base, instanceId: 1 })).toThrow(RangeError)
     expect(() => writeShapeComponent({ ...sample(), shadow: shadow(), instanceId: 1 })).toThrow(RangeError)
     expect(() =>
-      writeShapeComponent({ ...base, shadow: { ...shadow(), alpha: 256 }, instanceId: 1 }),
+      writeShapeComponent({ ...base, shadow: { ...shadow(), transparency: 256 }, instanceId: 1 }),
     ).toThrow(RangeError)
   })
 
@@ -477,5 +515,31 @@ describe('readShapeComponent', () => {
     expect(() => writeShapeComponent({ ...sample(), translation: [1, 0, 0, 0, 1, Infinity] })).toThrow(
       RangeError,
     )
+  })
+})
+
+describe('채우기 투명도 (experiments/fill-alpha, 한글 2024)', () => {
+  const dir = 'docs/experiments/fill-alpha'
+  it('그리기 개체는 블록 순서대로 단색, 그림의 투명도를 읽고, 한글은 다시 저장해도 보존한다', () => {
+    const fill = (file: string) => drawingObjects(load(`${dir}/${file}.hwp`))[0]!.shapeComponent!.fill!
+    expect([0, 77, 200, 255].map((n) => fill(`shape-red-${n}`).color!.transparency)).toEqual([0, 77, 200, 255])
+    expect([fill('shape-red-image-0-200').color!.transparency, fill('shape-red-image-0-200').image!.transparency]).toEqual([0, 200])
+    expect(fill('resaved-shape-red-200').color!.transparency).toBe(200)
+  })
+
+  it('그러데이션과 그림도 블록 순서대로 투명도를 읽는다', () => {
+    const fill = (file: string) => drawingObjects(load(`${dir}/${file}.hwp`))[0]!.shapeComponent!.fill!
+    expect(fill('shape-gradient-200').gradient!.transparency).toBe(200)
+    const f = fill('shape-gradient-image-0-200')
+    expect([f.gradient!.transparency, f.image!.transparency]).toEqual([0, 200])
+  })
+
+  it.each([
+    ['resaved-cell-red-255', 3],
+    ['resaved-para-red-255', 2],
+    ['resaved-page-blue-255', 3],
+    ['resaved-char-yellow-255', 4],
+  ])('%s: DocInfo 테두리/배경의 투명도는 그리지 않지만 한글이 보존한다', (file, index) => {
+    expect(load(`${dir}/${file}.hwp`).borderFills[index]!.fill!.color!.transparency).toBe(255)
   })
 })
