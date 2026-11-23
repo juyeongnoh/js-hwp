@@ -164,3 +164,33 @@ describe('셀 LIST_HEADER 속성 (experiments/list-header-properties, 한글 202
     expect(listHeads(serializeHwp(doc))).toEqual(['0100000020000400', '0100000020000400', '0100000020000000', '0100000020000000'])
   })
 })
+
+describe('셀·캡션이 아닌 문단 리스트의 리스트 속성', () => {
+  const read = (path: string) => parseHwp(new Uint8Array(readFileSync(join(root, path))))
+  const controls = (path: string) =>
+    read(path).sections.flatMap((s) => s.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items)))
+
+  it('꼬리말·바탕쪽·메모도 bit 0~6을 필드로 읽고, 헤더 8바이트 뒤 바이트는 보존한다', () => {
+    const footer = controls('fixtures/kogl_hwp/보령시 주간행사계획(5. 12. ~ 5. 18.).hwp').find((i) => i.type === 'footer')
+    expect(footer?.type === 'footer' && [footer.verticalAlign, footer.listTrailing?.length]).toEqual([VerticalAlign.Bottom, 26])
+
+    const master = read('scratch/manuscript.hwp').sections[0]!.masterPages![0]!
+    expect([master.verticalAlign, master.listTrailing?.length]).toEqual([VerticalAlign.Top, 26])
+
+    const memo = read('docs/experiments/section-memo-shape-id/base-two-memo-shapes.hwp').sections.flatMap((s) => s.memos ?? [])[0]!
+    expect([memo.verticalAlign, memo.listTrailing?.length]).toEqual([VerticalAlign.Top, 8])
+  })
+
+  it('새 머리말·꼬리말은 헤더 8바이트만 쓰고, 필드를 속성 비트로 쓴다', () => {
+    const doc = new DocumentBuilder().header('a').footer('b').build()
+    const items = doc.sections[0]!.paragraphs[0]!.runs[0]!.items
+    const footer = items.find((i) => i.type === 'footer')!
+    Object.assign(footer, { textDirection: TextDirection.Vertical, verticalAlign: VerticalAlign.Bottom, listUnknownBits: 1 << 24 })
+    const bytes = serializeHwp(doc)
+    // 꼬리말(앞에 있다): 0x01(세로) | 0x40(아래) | bit 24. 머리말: 속성 0(위).
+    expect(listHeads(bytes, Infinity)).toEqual(['0100000041000001', '0100000000000000'])
+
+    const reread = parseHwp(bytes).sections[0]!.paragraphs[0]!.runs[0]!.items.find((i) => i.type === 'footer')
+    expect(reread).toMatchObject({ textDirection: TextDirection.Vertical, verticalAlign: VerticalAlign.Bottom, listUnknownBits: 1 << 24 })
+  })
+})

@@ -5,7 +5,7 @@
 import type { Rgb } from './color.js'
 import type { NumberFormat } from './docinfo.js'
 import type { LineStyle } from './docinfo.js'
-import type { ListHeaderRest, Paragraph } from './controls.js'
+import type { Paragraph, ParagraphList } from './controls.js'
 import type { HalfHwpUnit, HwpUnit } from './units.js'
 
 export interface PageMargins {
@@ -224,20 +224,24 @@ export interface SectionProperties {
 
 /**
  * 바탕쪽. `secd` 아래에 쪽 테두리/배경 다음으로 LIST_HEADER와 형제 문단으로 온다(정오표 68).
- * LIST_HEADER의 텍스트 영역 폭·높이 등(표 137)은 아직 해석하지 않고 `listHeaderRest`로 보존한다.
  */
-export interface MasterPage extends ListHeaderRest {
-  paragraphs: Paragraph[]
+export interface MasterPage extends ParagraphList {
+  /**
+   * LIST_HEADER에서 문단 리스트 헤더 8바이트 뒤의 바이트. 오프셋 8, 12에 텍스트 영역 폭·높이(표 137)로
+   * 보이는 값이 있지만 해석하지 않고 그대로 붙인다.
+   */
+  listTrailing?: Uint8Array
 }
 
 /**
  * 메모 내용. 한글은 문서의 모든 메모를 마지막 구역의 마지막 문단 아래에 MEMO_LIST, LIST_HEADER,
  * 문단 순서로 모아 둔다(정오표 71). 본문의 메모 자리는 필드 컨트롤이다.
  */
-export interface Memo extends ListHeaderRest {
+export interface Memo extends ParagraphList {
   /** MEMO_LIST 페이로드의 UINT32. 한글은 1부터 차례로 쓴다. */
   id: number
-  paragraphs: Paragraph[]
+  /** LIST_HEADER에서 문단 리스트 헤더 8바이트 뒤의 바이트. 명세에 없고, 해석하지 않고 그대로 붙인다. */
+  listTrailing?: Uint8Array
 }
 
 export interface Section {

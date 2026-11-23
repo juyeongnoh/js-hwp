@@ -110,11 +110,11 @@ export enum CaptionSide {
  * 개체 캡션(표 71~73). 파일에서는 개체 CTRL_HEADER의 첫 자식 LIST_HEADER와 그 뒤 문단이고,
  * 개체 공통 속성 bit 29가 켜진다.
  *
- * 캡션 리스트는 문단 리스트 헤더(표 65)로 시작하므로 리스트 속성({@link ListProperties})을 가진다.
+ * 캡션 리스트는 문단 리스트 헤더(표 65)로 시작하는 {@link ParagraphList}다.
  * 대화상자의 "오른쪽 가운데", "오른쪽 아래"에서 가운데·아래가 세로 정렬(bit 5~6)이다(E34).
  * 세로 정렬이 없으면 한글이 만든 아래 캡션처럼 위로 쓴다.
  */
-export interface Caption extends ListProperties {
+export interface Caption extends ParagraphList {
   side: CaptionSide;
   /** 여백 부분까지 너비 확대 (개체 속성 -> 캡션에서 확인). */
   fullSize?: boolean;
@@ -124,13 +124,7 @@ export interface Caption extends ListProperties {
   gap: HwpUnit;
   /** 텍스트의 최대 길이. 한글은 개체의 폭을 쓴다. 없으면 쓸 때 개체 폭을 쓴다. */
   maxWidth?: HwpUnit;
-  paragraphs: Paragraph[];
 
-  /**
-   * 리스트 속성(표 65, LIST_HEADER 오프셋 4)에서 {@link ListProperties} 밖의 비트(bit 7~31,
-   * 범위 밖 세로 정렬 3이면 bit 5~6). 다시 쓸 때 그대로 넣는다.
-   */
-  listUnknownBits?: number;
   /** 캡션 속성(표 72)에서 bit 0~2 밖의 비트. */
   unknownBits?: number;
   /** 캡션 정보(14B) 뒤에 남은 바이트. 한글 2024는 0을 8바이트 쓴다. */
@@ -247,11 +241,14 @@ export enum ListLineWrap {
 }
 
 /**
- * 문단 리스트 속성(표 65, LIST_HEADER 오프셋 4)의 bit 0~6. 모든 LIST_HEADER에 공통인 부분이고,
- * HWPX `hp:subList`의 `textDirection`, `lineWrap`, `vertAlign`에 해당한다. 비트 위치는 셀로
- * 확인했다(정정 85, `experiments/list-header-properties`).
+ * 문단 리스트. 셀, 캡션, 머리말·꼬리말, 각주·미주, 숨은 설명, 바탕쪽, 메모가 이를 확장한다.
+ *
+ * HWP에서는 문단 리스트 헤더(표 65, LIST_HEADER 앞 8바이트: 문단 수 UINT32, 리스트 속성 UINT32)와
+ * 그 뒤의 형제 문단 레코드다(정정 53, 83). 문단 수는 {@link paragraphs}의 길이로 쓴다. 리스트
+ * 속성의 bit 0~6이 아래 세 필드이고, HWPX `hp:subList`의 `textDirection`, `lineWrap`,
+ * `vertAlign`에 해당한다. 비트 위치는 셀로 확인했다(정정 85, `experiments/list-header-properties`).
  */
-export interface ListProperties {
+export interface ParagraphList {
   /**
    * 글자 방향(bit 0~2). 없으면 가로. 한글이 쓰지 않는 3~7도 다시 저장할 때 그대로 남으므로
    * 읽은 값을 그대로 둔다.
@@ -261,12 +258,19 @@ export interface ListProperties {
   lineWrap?: ListLineWrap;
   /**
    * 세로 정렬(bit 5~6, 파일 값 0 위, 1 가운데, 2 아래). 셀에서 없으면 한글의 새 셀 기본값인
-   * 가운데로 쓴다. 범위 밖 값 3은 이 필드 없이 리스트의 모르는 비트로 남는다.
+   * 가운데로 쓴다. 범위 밖 값 3은 이 필드 없이 {@link listUnknownBits}로 남는다.
    */
   verticalAlign?: VerticalAlign;
+  /**
+   * 리스트 속성에서 이 객체의 필드로 읽지 않은 비트(bit 7~31, 범위 밖 세로 정렬 3이면 bit 5~6).
+   * 셀은 bit 16~20을 셀 필드로 읽으므로 여기에 두지 않는다. 한글은 셀에서 bit 24, 26을 흔히
+   * 켜지만 HWPX에 대응 속성이 없고 뜻을 모른다. 다시 쓸 때 그대로 넣는다.
+   */
+  listUnknownBits?: number;
+  paragraphs: Paragraph[];
 }
 
-export interface TableCell extends ListProperties {
+export interface TableCell extends ParagraphList {
   /** 열 주소 (0부터 시작) */
   col: number;
   /** 행 주소 (0부터 시작) */
@@ -293,12 +297,6 @@ export interface TableCell extends ListProperties {
   editable?: boolean;
   /** bit 20, HWPX `dirty`. 한글 자동화의 셀 파라미터 `Dirty`이며 뜻은 확인하지 않았다. */
   dirty?: boolean;
-  /**
-   * 셀 LIST_HEADER 속성(표 65)에서 {@link ListProperties}와 위 필드 밖의 비트(bit 7~15, 21~31,
-   * 범위 밖 세로 정렬 3이면 bit 5~6). 한글은 bit 24, 26을 흔히
-   * 켜지만 HWPX에 대응 속성이 없고 뜻을 모른다. 다시 쓸 때 그대로 넣는다.
-   */
-  listUnknownBits?: number;
   /**
    * 셀 LIST_HEADER에서 셀 속성(표 80) 26B 뒤에 남는 바이트. 명세에 없다. 한글 2024는 12B나 13B를
    * 쓰고, 첫 UINT32는 대개 셀 폭과 같고 나머지는 0이었다(뜻 미확인). 읽은 셀은 그대로 다시 붙인다.
@@ -513,30 +511,26 @@ export enum HeaderFooterApplyTo {
   Odd = 2,
 }
 
-/**
- * 문단 리스트를 가진 컨트롤이 LIST_HEADER에서 모델이 해석하지 않는 바이트.
- * 문단 수(UINT32, 4바이트) 뒤, 곧 리스트 속성(UINT32)부터의 바이트이고, 쓸 때 문단 수 뒤에
- * 그대로 붙인다. 명세 표 65는 문단 수를 INT16이라고 적었지만 실제로는 INT32다(정정 83).
- */
-export interface ListHeaderRest {
-  listHeaderRest?: Uint8Array;
-}
-
-export interface HeaderFooterControl extends ListHeaderRest {
+export interface HeaderFooterControl extends ParagraphList {
   type: "header" | "footer";
   applyTo: HeaderFooterApplyTo;
   /** 속성(표 141)에서 모델이 해석하지 않는 비트(bit 2 이상). 한글은 쓰레기 값을 쓰기도 한다. */
   unknownBits?: number;
   /** CTRL_HEADER에서 속성 뒤의 바이트. 한글은 4바이트를 더 쓴다. */
   trailing?: Uint8Array;
-  paragraphs: Paragraph[];
+  /**
+   * LIST_HEADER에서 문단 리스트 헤더 8바이트 뒤의 바이트. 텍스트 영역 폭·높이 등(표 140)으로
+   * 보이지만 해석하지 않고 그대로 붙인다. 없으면 8바이트만 쓴다.
+   */
+  listTrailing?: Uint8Array;
 }
 
-export interface NoteControl extends ListHeaderRest {
+export interface NoteControl extends ParagraphList {
   type: "footnote" | "endnote";
   /** CTRL_HEADER에서 ctrlId 뒤의 바이트. 명세는 8바이트를 쓴다고 적는다(4.3.10.4). */
   trailing?: Uint8Array;
-  paragraphs: Paragraph[];
+  /** LIST_HEADER에서 문단 리스트 헤더 8바이트 뒤의 바이트. 해석하지 않고 그대로 붙인다. */
+  listTrailing?: Uint8Array;
   /** 자동 번호 대신 쓰는 명시적 표시. */
   customMark?: string;
   /** 번호 매기기 카운터 재정의. */
@@ -735,11 +729,12 @@ export interface ComposeControl {
 }
 
 /** 숨은 설명. */
-export interface HiddenCommentControl extends ListHeaderRest {
+export interface HiddenCommentControl extends ParagraphList {
   type: "hiddenComment";
   /** CTRL_HEADER에서 ctrlId 뒤의 바이트. */
   trailing?: Uint8Array;
-  paragraphs: Paragraph[];
+  /** LIST_HEADER에서 문단 리스트 헤더 8바이트 뒤의 바이트. 해석하지 않고 그대로 붙인다. */
+  listTrailing?: Uint8Array;
 }
 
 export interface MemoControl {
