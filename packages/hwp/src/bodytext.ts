@@ -1441,6 +1441,20 @@ export function readShapeComponent(
     shape.line = readShapeLine(r);
     const fill = readShapeFill(r, payload);
     if (fill) shape.fill = fill;
+    // 채우기를 읽었을 때만 그 뒤가 그림자임을 안다.
+    if (fill && r.hasMore(SHAPE_SHADOW_SIZE)) {
+      shape.shadow = {
+        kind: r.uint32(),
+        color: r.color(),
+        offsetX: r.int32(),
+        offsetY: r.int32(),
+        alpha: 0,
+      };
+      shape.instanceId = r.uint32();
+      const afterInstanceId = r.uint8();
+      if (afterInstanceId) shape.afterInstanceId = afterInstanceId;
+      shape.shadow.alpha = r.uint8();
+    }
   }
   if (r.hasMore()) shape.trailing = r.rest();
   return shape;
@@ -1458,6 +1472,12 @@ const DRAWING_SHAPE_IDS = new Set([
 
 /** 테두리 선 정보의 길이. 명세는 11이지만 선 굵기가 4바이트라 13이다(정정 89). */
 const SHAPE_LINE_SIZE = 13;
+
+/**
+ * 채우기 뒤의 그림자와 인스턴스 ID(정정 91): 그림자 종류 UINT32, 색 COLORREF, 가로·세로 이동 INT32,
+ * 인스턴스 ID UINT32, 뜻 모를 BYTE, 그림자 투명도 BYTE.
+ */
+const SHAPE_SHADOW_SIZE = 22;
 
 /**
  * 테두리 선 정보(표 86): 색 COLORREF, 굵기 INT32, 속성 UINT32(표 87), Outline style BYTE(표 88).
@@ -1592,6 +1612,20 @@ export function writeShapeComponent(shape: ShapeComponent): ByteWriter {
   }
   if (shape.line) writeShapeLine(w, shape.line);
   if (shape.fill) writeFill(w, shape.fill);
+  if (shape.shadow || shape.instanceId !== undefined) {
+    const { shadow, instanceId } = shape;
+    if (!shadow || instanceId === undefined)
+      throw new RangeError("그림자와 인스턴스 ID는 함께 있어야 한다.");
+    if (!shape.fill)
+      throw new RangeError("그림자는 채우기 뒤에만 쓸 수 있다.");
+    w.uint32(shadow.kind)
+      .color(shadow.color)
+      .int32(shadow.offsetX)
+      .int32(shadow.offsetY)
+      .uint32(instanceId)
+      .uint8(shape.afterInstanceId ?? 0)
+      .uint8(shadow.alpha);
+  }
   if (shape.trailing) w.bytes(shape.trailing);
   return w;
 }

@@ -463,6 +463,68 @@ PARA_HEADER (0)
 
 여백 순서와 테두리/배경 ID는 여백을 100, 200, 300, 400으로 정한 셀을 HWP와 HWPX로 저장해 대조했다(`experiments/list-header-properties/cell-margins-100-200-300-400.hwp`). 코덱은 병합 수와 끝 12~13B를 읽은 그대로 다시 쓴다. 새 셀은 한글처럼 끝에 셀 폭 UINT32와 0 9바이트를 쓴다(47B).
 
+### 그리기 개체 (`gso `, SHAPE_COMPONENT)
+
+그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 지금은 `gso ` 컨트롤을 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
+
+```
+CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
+  [LIST_HEADER 캡션]          캡션 문단이 형제로 뒤따른다 (placement.caption)
+  [PARA_HEADER ...]
+  SHAPE_COMPONENT             아래 표 (shapeComponent)
+    [LIST_HEADER 글상자]      글상자 문단이 형제로 뒤따른다 (childRecords)
+    [PARA_HEADER ...]
+    SHAPE_COMPONENT_RECTANGLE 등 도형별 레코드 (childRecords)
+```
+
+**SHAPE_COMPONENT.** 오프셋은 사각형(행렬 쌍 1개) 기준이다. 사각형 252B, 그림 196B다.
+
+| 오프셋 | 자료형 | 설명 |
+| --- | --- | --- |
+| 0 | UINT32 ×2 | 개체 컨트롤 ID(`$rec`, `$pic` 등). 문단에 놓인 개체는 **두 번** 쓴다(명세의 GenShapeObject) (`shapeId`) |
+| 8 | INT32 ×2 | 묶음 안의 X, Y 오프셋 (`groupOffsetX`, `groupOffsetY`) |
+| 16 | WORD | 묶인 횟수 (`groupLevel`) |
+| 18 | WORD | local file version. 한글 2024는 1 (`localVersion`) |
+| 20 | UINT32 ×2 | 처음 폭·높이 (`initialWidth`, `initialHeight`) |
+| 28 | UINT32 ×2 | 현재 폭·높이 (`width`, `height`) |
+| 36 | UINT32 | 속성: bit 0 수평 반전, bit 1 수직 반전. **한글은 명세에 없는 bit 19, 24, 26, 29도 쓴다. 뜻 모름** (`flipHorizontal`, `flipVertical`, `unknownBits`) |
+| 40 | HWPUNIT16 | 회전각. 단위 미확인 (`rotation`) |
+| 42 | INT32 ×2 | 회전 중심. 한글은 폭·높이의 절반 (`rotationCenter`) |
+| 50 | WORD | scale/rotation 행렬 쌍 수 cnt. 쓸 때는 배열 길이 |
+| 52 | double ×6 | translation matrix (`translation`) |
+| 100 | double ×6 ×2 ×cnt | scale matrix, rotation matrix 쌍 (`scaleRotations`) |
+| 196 | 13B | 테두리 선 정보. 그리기 개체(`$lin` `$rec` `$ell` `$arc` `$pol` `$cur`)만. **명세 표 86은 11B** (`line`) |
+| 209 | 가변 | 채우기 정보(표 28). DocInfo 테두리/배경과 같은 배치. 단색은 21B (`fill`) |
+| 230 | 22B | **명세에 없음.** 그림자와 인스턴스 ID. 명세 표 81은 여기에 글상자 12B를 적었다 (`shadow`, `instanceId`, `afterInstanceId`) |
+
+그림은 Rendering 정보(오프셋 196)에서 레코드가 끝나고, 그림 고유 정보는 자식 SHAPE_COMPONENT_PICTURE에 있다.
+
+**테두리 선 정보(13B).**
+
+| 오프셋 | 자료형 | 설명 |
+| --- | --- | --- |
+| 0 | COLORREF | 선 색 (`color`) |
+| 4 | **INT32** | 선 굵기. 0.12mm = 33. **명세는 INT16** (`width`) |
+| 8 | UINT32 | 속성: bit 0~5 선 종류(실선 1), 6~9 끝 모양(0 round, 1 flat), 10~15·16~21 시작·끝 화살표 모양, 22~25·26~29 시작·끝 화살표 크기, 30·31 시작·끝 화살표 채움 (`style`, `endCap`, `startArrow`, `endArrow`, `startArrowSize`, `endArrowSize`, `startArrowFill`, `endArrowFill`) |
+| 12 | BYTE | Outline style: 0 normal, 1 outer, 2 inner (`outlineStyle`) |
+
+한글 대화상자의 "선 굵기 내부 적용"은 Outline style 0과 2만 만든다. 1은 한글이 보존하고 HWPX `OUTER`로 내보낸다(정정 90). 새로 그린 사각형은 화살표 크기가 중간-중간(4)이지만, 대화상자에서 "설정"을 누르면 작은-작은(0)이 된다.
+
+**채우기 뒤 22B.**
+
+| 오프셋 | 자료형 | 설명 |
+| --- | --- | --- |
+| 0 | UINT32 | 그림자 종류: 0 없음, 1~4 평행(왼쪽 위, 오른쪽 위, 왼쪽 아래, 오른쪽 아래), 5~8 기울임(같은 순서), 13 축소, 14 확대. HWPX `hp:shadow type` (`shadow.kind`, `ShapeShadowKind`) |
+| 4 | COLORREF | 그림자 색. 기본 `#B2B2B2`. 그림자가 없어도 들어 있다 (`shadow.color`) |
+| 8 | INT32 ×2 | 그림자 가로·세로 이동. 1mm = 283 (`shadow.offsetX`, `shadow.offsetY`) |
+| 16 | UINT32 | 인스턴스 ID. HWPX `hp:rect` 등의 `instid`. 개체마다 다르고 다시 저장해도 그대로다 (`instanceId`) |
+| 20 | BYTE | **뜻 모름.** 늘 0 (`afterInstanceId`) |
+| 21 | BYTE | 그림자 투명도 0~255. 대화상자 30% = 77. HWPX `alpha` (`shadow.alpha`) |
+
+**글상자 LIST_HEADER(33B).** 명세 표 89·90의 글상자 정보는 SHAPE_COMPONENT가 아니라 그 자식 LIST_HEADER에 있고, 순서도 명세와 반대다(정정 91). 공통 헤더 8B(문단 수, 리스트 속성) 뒤에 왼쪽·오른쪽·위·아래 여백 HWPUNIT16 ×4(기본 1mm = 283), 텍스트 최대 폭 HWPUNIT(= 도형 폭), 명세에 없는 0 13B가 온다. 코덱은 아직 해석하지 않고 `childRecords`로 보존한다.
+
+코덱은 앞에서부터 해석할 수 있는 데까지만 모델로 읽는다. ID가 두 번 오지 않거나, 행렬보다 짧거나, 행렬 원소가 유한하지 않으면 SHAPE_COMPONENT 전체를 `childRecords`에 원본 그대로 둔다. 채우기는 읽은 값을 다시 써서 원본과 같을 때만 `fill`로 두고, 채우기나 그림자를 읽지 못하면 그 뒤 바이트를 `trailing`에 남긴다.
+
 ### 구역 정의 (`secd`)
 
 구역 첫 문단의 PARA_TEXT에 확장 컨트롤(코드 2)로 들어가고, 짝인 CTRL_HEADER의 ID가 `secd`다. 근거는 `hwp-5.0-errata.md`의 정정 54~61과 E23에 있다.

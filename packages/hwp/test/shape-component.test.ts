@@ -8,6 +8,7 @@ import {
   LineEndCap,
   LineStyle,
   OutlineStyle,
+  ShapeShadowKind,
   type Control,
   type Fill,
   type ShapeComponent,
@@ -76,11 +77,13 @@ describe('저장소 HWP 파일의 SHAPE_COMPONENT', () => {
     for (const p of payloads) {
       const shape = readShapeComponent(Buffer.from(p, 'hex'))
       expect(shape).toBeDefined()
-      // 저장소의 그리기 개체는 사각형뿐이고, 모두 테두리 선과 채우기를 모델로 읽는다.
+      // 저장소의 그리기 개체는 사각형뿐이고, 모두 테두리 선·채우기·그림자를 모델로 읽어 남는 바이트가 없다.
       if (shape!.shapeId === '$rec') {
         expect(shape!.line).toBeDefined()
         expect(shape!.fill).toBeDefined()
-        expect(shape!.trailing).toHaveLength(22)
+        expect(shape!.shadow).toBeDefined()
+        expect(shape!.instanceId).toBeDefined()
+        expect(shape!.trailing).toBeUndefined()
       }
     }
   })
@@ -131,9 +134,17 @@ describe('개체 요소 속성 값 (한글 2024)', () => {
       pattern: { style: HatchStyle.None, color: { r: 0, g: 0, b: 0, unknown: 0 } },
       unknown: 0,
     })
-    // 그 뒤의 명세에 없는 22바이트. 회색 b2b2b2가 보인다(그림자로 추정).
-    expect(shape.trailing).toHaveLength(56 - 13 - 21)
-    expect(hex(shape.trailing!.subarray(4, 8))).toBe('b2b2b200')
+    // 그 뒤의 명세에 없는 22바이트: 그림자 없음(색은 기본 회색)과 인스턴스 ID.
+    expect(shape.shadow).toEqual({
+      kind: ShapeShadowKind.None,
+      color: { r: 0xb2, g: 0xb2, b: 0xb2, unknown: 0 },
+      offsetX: 0,
+      offsetY: 0,
+      alpha: 0,
+    })
+    expect(shape.instanceId).toBe(0x0a8c5e98)
+    expect(shape.afterInstanceId).toBeUndefined()
+    expect(shape.trailing).toBeUndefined()
     // SHAPE_COMPONENT는 childRecords에 없고, 그 자식(도형별 레코드)은 깊이 1로 남는다.
     expect(rect!.childRecords?.map((r) => [r.tagId, r.depth])).toEqual([
       [SectionTag.ShapeComponentRectangle, 1],
@@ -163,6 +174,52 @@ describe('Outline style (experiments/shape-outline-style, 한글 2024)', () => {
     expect(outline('outline-1-resaved.hwp')).toBe(OutlineStyle.Outer)
     expect(outline('outline-1-dialog-ok.hwp')).toBe(OutlineStyle.Normal)
     expect(outline('outline-3-resaved.hwp')).toBe(3)
+  })
+})
+
+describe('그림자 (experiments/shape-shadow, 한글 2024)', () => {
+  const shapeOf = (file: string) =>
+    drawingObjects(load(`docs/experiments/shape-shadow/${file}`))[0]!.shapeComponent!
+
+  it('그림자 종류, 이동, 투명도와 인스턴스 ID', () => {
+    const shape = shapeOf('shadow-1.hwp')
+    expect(shape.shadow).toEqual({
+      kind: ShapeShadowKind.ScaleNarrow,
+      color: { r: 0xb2, g: 0xb2, b: 0xb2, unknown: 0 },
+      offsetX: 283,
+      offsetY: 566,
+      alpha: 77,
+    })
+    // HWPX hp:rect instid="181272362"
+    expect(shape.instanceId).toBe(181272362)
+    expect(shapeOf('base.hwp').instanceId).toBe(181272362)
+    expect(shapeOf('base.hwp').shadow!.kind).toBe(ShapeShadowKind.None)
+  })
+
+  it.each([
+    ['type-r1c2', ShapeShadowKind.ParallelLeftTop],
+    ['type-r1c3', ShapeShadowKind.ParallelRightTop],
+    ['type-r2c2', ShapeShadowKind.ParallelLeftBottom],
+    ['type-r2c3', ShapeShadowKind.ParallelRightBottom],
+    ['type-r1c4', ShapeShadowKind.ShearLeftTop],
+    ['type-r1c5', ShapeShadowKind.ShearRightTop],
+    ['type-r2c4', ShapeShadowKind.ShearLeftBottom],
+    ['type-r2c5', ShapeShadowKind.ShearRightBottom],
+    ['type-r2c1', ShapeShadowKind.ScaleEnlarge],
+  ])('%s의 그림자 종류는 %i', (file, kind) => {
+    expect(shapeOf(`${file}.hwp`).shadow!.kind).toBe(kind)
+  })
+
+  it('고친 그림자 바이트만 바뀐다', () => {
+    const path = 'docs/experiments/shape-shadow/base.hwp'
+    const bytes = new Uint8Array(readFileSync(join(root, path)))
+    const doc = parseHwp(bytes)
+    const shape = drawingObjects(doc)[0]!.shapeComponent!
+    shape.shadow = { ...shape.shadow!, kind: ShapeShadowKind.ScaleNarrow, offsetX: 283, offsetY: 566, alpha: 77 }
+    const [after] = shapeComponents(serializeHwp(doc))
+    const [expected] = shapeComponents(new Uint8Array(readFileSync(join(root, 'docs/experiments/shape-shadow/shadow-1.hwp'))))
+    // 한글이 같은 값으로 저장한 shadow-1과 SHAPE_COMPONENT가 같다.
+    expect(after).toBe(expected)
   })
 })
 
@@ -236,8 +293,12 @@ describe('읽은 채우기를 고치면', () => {
     shape.fill = { kind: FillKind.None }
     const [after] = shapeComponents(serializeHwp(doc)).map((h) => Buffer.from(h, 'hex'))
     const at = 8 + 42 + 2 + 48 * 3 + 13
+    const [before] = shapeComponents(new Uint8Array(readFileSync(join(root, path)))).map((h) =>
+      Buffer.from(h, 'hex'),
+    )
     expect(hex(after!.subarray(at, at + 8))).toBe('0000000000000000')
-    expect(hex(after!.subarray(at + 8))).toBe(hex(shape.trailing!))
+    // 그림자 22바이트는 그대로 뒤따른다.
+    expect(hex(after!.subarray(at + 8))).toBe(hex(before!.subarray(before!.length - 22)))
   })
 })
 
@@ -358,6 +419,44 @@ describe('readShapeComponent', () => {
     const shortShape = readShapeComponent(withTail(short))!
     expect(shortShape.fill).toBeUndefined()
     expect([...shortShape.trailing!]).toEqual(short)
+  })
+
+  const shadow = () => ({
+    kind: ShapeShadowKind.None,
+    color: { r: 0xb2, g: 0xb2, b: 0xb2, unknown: 0 },
+    offsetX: 0,
+    offsetY: 0,
+    alpha: 0,
+  })
+  const fill = (): Fill => ({ kind: FillKind.None })
+
+  it('그림자와 인스턴스 ID를 쓰고 다시 읽는다', () => {
+    const shape: ShapeComponent = {
+      ...sample(),
+      line: line(),
+      fill: fill(),
+      shadow: { ...shadow(), kind: ShapeShadowKind.ShearRightBottom, offsetX: -283, alpha: 255 },
+      instanceId: 0xffffffff,
+      afterInstanceId: 7,
+    }
+    const bytes = writeShapeComponent(shape).finish()
+    expect(bytes).toHaveLength(8 + 42 + 2 + 48 * 3 + 13 + 8 + 22)
+    expect(readShapeComponent(bytes)).toEqual(shape)
+  })
+
+  it('그림자보다 짧으면 그림자로 읽지 않는다', () => {
+    const shape: ShapeComponent = { ...sample(), line: line(), fill: fill(), trailing: new Uint8Array(21) }
+    expect(readShapeComponent(writeShapeComponent(shape).finish())).toEqual(shape)
+  })
+
+  it('그림자와 인스턴스 ID 하나만 있거나 범위를 넘으면 쓰지 않는다', () => {
+    const base = { ...sample(), line: line(), fill: fill() }
+    expect(() => writeShapeComponent({ ...base, shadow: shadow() })).toThrow(RangeError)
+    expect(() => writeShapeComponent({ ...base, instanceId: 1 })).toThrow(RangeError)
+    expect(() => writeShapeComponent({ ...sample(), shadow: shadow(), instanceId: 1 })).toThrow(RangeError)
+    expect(() =>
+      writeShapeComponent({ ...base, shadow: { ...shadow(), alpha: 256 }, instanceId: 1 }),
+    ).toThrow(RangeError)
   })
 
   it('비트 필드를 넘는 테두리 선 값은 쓰지 않는다', () => {

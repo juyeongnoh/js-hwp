@@ -503,10 +503,56 @@ export interface ShapeComponent {
    */
   fill?: Fill;
   /**
-   * 그 뒤의 바이트. 그리기 개체는 채우기 뒤에 명세에 없는 22바이트(그림자, 인스턴스 ID로 추정)가
-   * 오고, 그림은 비어 있다. 아직 해석하지 않고 그대로 붙인다.
+   * 그림자. 명세에 없고, 그리기 개체에서 채우기 바로 뒤 22바이트에 인스턴스 ID와 함께 있다(정정 91,
+   * `experiments/shape-shadow`). 그림자가 없어도 종류 0으로 들어 있다. `instanceId`와 함께 읽고 쓴다.
+   */
+  shadow?: ShapeShadow;
+  /**
+   * 개체의 인스턴스 ID(UINT32). HWPX `hp:rect` 등의 `instid`와 같은 값이다. 개체마다 다르고 한글이
+   * 다시 저장해도 바뀌지 않는다. `shadow`와 함께 있어야 한다.
+   */
+  instanceId?: number;
+  /** 인스턴스 ID 뒤의 1바이트. 뜻을 모른다. 저장소 파일은 모두 0이다. 없으면 0으로 쓴다. */
+  afterInstanceId?: number;
+  /**
+   * 그 뒤의 바이트. 지금까지 본 그리기 개체는 그림자 뒤에서 레코드가 끝났고, 그림은 Rendering 정보
+   * 뒤가 비어 있다. 채우기나 그림자를 모델로 읽지 못하면 그 바이트가 여기에 원본 그대로 남는다.
    */
   trailing?: Uint8Array;
+}
+
+/**
+ * 그림자 종류. HWP 값과 HWPX `hp:shadow`의 `type`이다(정정 91). 한글 2024 대화상자의 아이콘 10개는
+ * 1~8, 13, 14이고 9~12를 고르는 곳은 없다.
+ */
+export enum ShapeShadowKind {
+  None = 0,
+  /** `PARELLEL_LEFTTOP`(HWPX 철자 그대로). */
+  ParallelLeftTop = 1,
+  ParallelRightTop = 2,
+  ParallelLeftBottom = 3,
+  ParallelRightBottom = 4,
+  /** `SHEAR_LEFTTOP`. */
+  ShearLeftTop = 5,
+  ShearRightTop = 6,
+  ShearLeftBottom = 7,
+  ShearRightBottom = 8,
+  /** `SCALE_NARROW`. */
+  ScaleNarrow = 13,
+  /** `SCALE_ENLARGE`. */
+  ScaleEnlarge = 14,
+}
+
+/** 그리기 개체의 그림자(정정 91). */
+export interface ShapeShadow {
+  kind: ShapeShadowKind;
+  /** 한글 기본값은 `#B2B2B2`다. 그림자가 없어도 들어 있다. */
+  color: Rgb;
+  /** 가로·세로 이동. 1mm가 283이다. */
+  offsetX: SHwpUnit;
+  offsetY: SHwpUnit;
+  /** 투명도 0~255. 대화상자의 30%가 77이다. HWPX `alpha`와 같다. */
+  alpha: number;
 }
 
 /** 그리기 개체 안에 그려지는 텍스트. */
@@ -526,13 +572,7 @@ interface ShapeBase {
   placement: ObjectPlacement;
   outline?: ShapeLine;
   fill?: Fill;
-  shadow?: {
-    kind: number;
-    color: Rgb;
-    offsetX: SHwpUnit;
-    offsetY: SHwpUnit;
-    alpha?: number;
-  };
+  shadow?: ShapeShadow;
   /** 회전, 1/100도, 시계방향. */
   rotation?: number;
   flipHorizontal?: boolean;
