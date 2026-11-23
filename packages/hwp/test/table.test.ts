@@ -15,8 +15,8 @@ const files = ['docs/experiments', 'fixtures', 'scratch'].flatMap((d) =>
     .map((f) => join(root, d, f)),
 )
 
-/** 모든 TABLE 레코드 페이로드를 16진수로 모은다. `zonesOnly`면 Valid Zone Info Size부터 끝까지만. */
-function tableRecords(bytes: Uint8Array, zonesOnly = false): string[] {
+/** 모든 TABLE 레코드 페이로드를 16진수로 모은다. */
+function tableRecords(bytes: Uint8Array): string[] {
   const c = CFB.read(bytes, { type: 'buffer' })
   const header = CFB.find(c, 'FileHeader')!.content as Uint8Array
   const compressed = (header[36]! & 1) === 1
@@ -24,10 +24,7 @@ function tableRecords(bytes: Uint8Array, zonesOnly = false): string[] {
     const data = new Uint8Array(CFB.find(c, p.replace(/^[^/]*/, ''))!.content as Uint8Array)
     return parseRecords(maybeInflate(data, compressed))
       .filter((r) => r.tagId === SectionTag.Table)
-      .map((r) => {
-        const rows = r.payload[4]! | (r.payload[5]! << 8)
-        return Buffer.from(zonesOnly ? r.payload.subarray(18 + 2 * rows + 2) : r.payload).toString('hex')
-      })
+      .map((r) => Buffer.from(r.payload).toString('hex'))
   })
 }
 
@@ -38,11 +35,32 @@ const tables = (doc: HwpDocument): Extract<Control, { type: 'table' }>[] =>
     ),
   )
 
-describe('저장소 HWP 파일의 TABLE 셀 영역 바이트 왕복', () => {
-  // 표 속성(표 76)의 bit 2 위 비트와 표 순서는 아직 원본대로 쓰지 않아 셀 영역 부분만 비교한다.
+describe('저장소 HWP 파일의 TABLE 레코드 바이트 왕복', () => {
   it.each(files.map((f) => [f.slice(root.length + 1), f]))('%s', (_, file) => {
     const bytes = new Uint8Array(readFileSync(file))
-    expect(tableRecords(serializeHwp(parseHwp(bytes)), true).sort()).toEqual(tableRecords(bytes, true).sort())
+    expect(tableRecords(serializeHwp(parseHwp(bytes)))).toEqual(tableRecords(bytes))
+  })
+})
+
+describe('표 속성(표 76)', () => {
+  const read = (name: string) =>
+    tables(parseHwp(new Uint8Array(readFileSync(join(root, 'docs/experiments/table-property-bits', name)))))[0]!
+
+  it('bit 3을 noAdjust로, bit 0~3 밖의 비트를 unknownBits로 읽는다', () => {
+    expect(read('bits/bit3.hwp')).toMatchObject({ noAdjust: true })
+    expect(read('bits/bit3.hwp').unknownBits).toBeUndefined()
+    expect(read('bits/bit25.hwp')).toMatchObject({ unknownBits: 1 << 25 })
+    expect(read('edit-1-text.hwp')).toMatchObject({ unknownBits: 1 << 26 })
+    const base = read('base-2x2.hwp')
+    expect(base.noAdjust).toBeUndefined()
+    expect(base.unknownBits).toBeUndefined()
+  })
+
+  it('필드와 모르는 비트를 합쳐 쓴다', () => {
+    const doc = new DocumentBuilder().table([['a']]).build()
+    Object.assign(tables(doc)[0]!, { noAdjust: true, unknownBits: (1 << 24) | (1 << 26) | 0b1111 })
+    // 모르는 비트에 섞인 bit 0~3은 필드 값이 이긴다(쪽 경계 기본: 나눔 2, 제목 줄 반복 없음).
+    expect(tableRecords(serializeHwp(doc))[0]!.slice(0, 8)).toBe('0a000005')
   })
 })
 

@@ -215,11 +215,13 @@ export const DEFAULT_PLACEMENT: ObjectPlacement = {
 // 표
 // ---------------------------------------------------------------------------
 
+/** 표의 쪽 경계에서 나눔(표 76 bit 0~1, 정정 88). 설명의 앞은 한글 대화상자 표기, 괄호는 HWPX `pageBreak` 값이다(KS X 6101 표 194). */
 export enum PageBreakInTable {
+  /** 나누지 않음(`NONE`). */
   None = 0,
-  /** 표는 나누되 각 셀은 온전히 유지한다. */
+  /** 셀 단위로 나눔(`TABLE`). 표는 나뉘지만 셀은 나뉘지 않는다. */
   Cell = 1,
-  /** 개별 셀도 나눈다. */
+  /** 나눔(`CELL`). 셀 안의 텍스트도 나뉜다. 한글이 새 표에 쓰는 값이다. */
   Split = 2,
 }
 
@@ -323,11 +325,21 @@ export interface TableControl {
   cellMargins: CellMargins;
   cellSpacing?: HwpUnit;
   borderFillId?: number;
+  /** 쪽 경계에서 나눔(표 76 bit 0~1). 없으면 한글의 새 표처럼 {@link PageBreakInTable.Split}(나눔)으로 쓴다. */
   pageBreak?: PageBreakInTable;
   /** 앞의 N개 행을 쪽마다 제목으로 반복한다. */
   repeatHeaderRows?: number;
-  /** 왕복을 위해 기록해두는 자동 맞춤 동작. */
+  /**
+   * 표 속성 bit 3(HWPX `noAdjust`). KS X 6101 표 194는 "셀 너비/높이 값의 최소 단위(1 pt) 보정 여부"로
+   * 설명한다. 이름대로면 켜졌을 때 보정하지 않는다. 한글이 다시 저장할 때 보존한다. 켜는 한글 조작과 실제
+   * 동작은 확인하지 않았다(정정 88).
+   */
   noAdjust?: boolean;
+  /**
+   * 표 속성(표 76)에서 bit 0~3 밖의 비트. 한글은 bit 25, 26을 보존하고(셀에 글자를 넣으면 bit 26이
+   * 켜진다) bit 24는 다시 저장할 때 지운다. 뜻은 미확인이다(정정 88).
+   */
+  unknownBits?: number;
   /**
    * 셀 영역(표 74 Valid Zone Info, 표 78 영역 속성, HWPX `cellzone`). 셀 범위에 테두리/배경을
    * 지정한 기록이다. 개수(Valid Zone Info Size)는 배열 길이로 정한다. 없으면 0개로 쓴다.

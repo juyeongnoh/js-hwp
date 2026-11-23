@@ -1019,6 +1019,9 @@ function readColumnDefinition(reader: ByteReader, section: Section): void {
   };
 }
 
+/** 표 속성(표 76)에서 필드로 읽는 bit 0~1(쪽 경계에서 나눔), 2(제목 줄 자동 반복), 3(`noAdjust`). */
+const TABLE_PROPERTIES_KNOWN = 0b1111;
+
 function readTable(
   node: RecordNode,
   reader: ByteReader,
@@ -1035,6 +1038,8 @@ function readTable(
   let borderFillRef = 0;
   let pageBreak = 0;
   let repeatHeaderRows = 0;
+  let noAdjust = false;
+  let unknownBits = 0;
   const cellZones: CellZone[] = [];
 
   if (tableNode) {
@@ -1067,6 +1072,8 @@ function readTable(
     }
     pageBreak = bits(properties, 0, 1);
     repeatHeaderRows = bit(properties, 2) ? 1 : 0;
+    noAdjust = bit(properties, 3);
+    unknownBits = (properties & ~TABLE_PROPERTIES_KNOWN) >>> 0;
   }
 
   // 셀의 문단은 LIST_HEADER의 자식이 아니라 같은 레벨의 뒤따르는 레코드다. 다음
@@ -1104,6 +1111,8 @@ function readTable(
     ...idRefField(borderFillRef),
     pageBreak,
     repeatHeaderRows,
+    ...(noAdjust ? { noAdjust } : {}),
+    ...(unknownBits ? { unknownBits } : {}),
     ...(cellZones.length > 0 ? { cellZones } : {}),
   };
 }
@@ -2168,14 +2177,16 @@ function writeTable(
     // 캡션은 TABLE 레코드보다 앞, CTRL_HEADER의 첫 자식이다(table-caption-bottom.hwp).
     if (caption) writeCaption(writer, doc, caption, table.placement.width);
     const body = new ByteWriter();
-    let properties = 0;
+    let properties = (table.unknownBits ?? 0) & ~TABLE_PROPERTIES_KNOWN;
+    // 쪽 경계에서 나눔이 없으면 한글의 새 표처럼 "나눔"(2)을 쓴다(정정 88).
     properties = setBits(
       properties,
       0,
       1,
-      table.pageBreak ?? PageBreakInTable.Cell,
+      table.pageBreak ?? PageBreakInTable.Split,
     );
     properties = setBit(properties, 2, (table.repeatHeaderRows ?? 0) > 0);
+    properties = setBit(properties, 3, table.noAdjust ?? false);
     body.uint32(properties);
     body.uint16(table.rows.length);
     body.uint16(

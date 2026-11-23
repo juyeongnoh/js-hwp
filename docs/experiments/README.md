@@ -28,6 +28,7 @@
 | `cell-vertical-align/`        | 셀 세로 정렬이 LIST_HEADER 속성(오프셋 4) bit 5~6인지, 새 셀 기본값 |
 | `list-header-properties/`     | 셀 LIST_HEADER 속성의 비트(글자 방향, 줄바꿈, bit 16~20, 21~31)와 셀 여백 순서를 HWPX 셀 속성과 대조. 한글 자동화로 생성 |
 | `caption-list-properties/`    | 캡션 LIST_HEADER 리스트 속성이 셀과 같은 비트 배치인지 HWPX `hp:subList`와 대조. 세로 정렬은 한글에서 확인했고, 다시 저장하는 대조는 아직 |
+| `table-property-bits/`        | 표 속성(표 76) 쪽 경계 나눔 값과 명세에 없는 bit 3, 24, 25, 26을 한글 대화상자, HWPX `hp:tbl`, 다시 저장 결과와 대조 |
 | `scripts/`                    | 실험 파일 생성·검사 스크립트 (공용)                             |
 
 새 실험을 추가하면 이 표에 한 줄을 넣는다.
