@@ -1087,20 +1087,20 @@ function readTable(
   // TABLE 레코드보다 앞에 오는 LIST_HEADER는 셀이 아니라 캡션이다.
   const caption = readLeadingCaption(node, SectionTag.Table, context);
   let seenTable = false;
-  let target: Paragraph[] | undefined;
+  // 지금 문단을 채우는 셀. 바로 앞 LIST_HEADER의 셀이다.
+  let current: TableCell | undefined;
   for (const child of node.children) {
     if (child.tagId === SectionTag.Table) {
       seenTable = true;
-      target = undefined;
+      current = undefined;
     } else if (!seenTable) {
       continue;
     } else if (child.tagId === SectionTag.ListHeader) {
-      const cell = readTableCell(child, context);
-      const row = rows[cell.row] ?? rows[rows.length - 1];
-      row?.cells.push(cell);
-      target = cell.paragraphs;
-    } else if (child.tagId === SectionTag.ParaHeader && target) {
-      target.push(readParagraph(child, context));
+      current = readTableCell(child, context);
+      const row = rows[current.row] ?? rows[rows.length - 1];
+      row?.cells.push(current);
+    } else if (child.tagId === SectionTag.ParaHeader && current) {
+      current.paragraphs.push(readParagraph(child, context));
     }
   }
 
