@@ -18,6 +18,7 @@
 
 import {
   type Caption,
+  type Fill,
   type Control,
   type ObjectPlacement,
   type RawChildRecord,
@@ -70,7 +71,7 @@ import {
   childWithTag,
   parseRecords,
 } from "./record.js";
-import { versionNumber } from "./docinfo.js";
+import { readFill, versionNumber, writeFill } from "./docinfo.js";
 import { CtrlId, SectionTag } from "./tags.js";
 
 /** 문단 머리 단 나누기 종류에서 모델이 해석하는 비트: 0x04 쪽, 0x08 단 나누기. */
@@ -1436,8 +1437,11 @@ export function readShapeComponent(
   const unknownBits = (properties & ~SHAPE_COMPONENT_KNOWN) >>> 0;
   if (unknownBits) shape.unknownBits = unknownBits;
   // 테두리 선 정보는 그리기 개체에만 있다. 짧으면 해석하지 않고 trailing에 남긴다.
-  if (DRAWING_SHAPE_IDS.has(shape.shapeId) && r.hasMore(SHAPE_LINE_SIZE))
+  if (DRAWING_SHAPE_IDS.has(shape.shapeId) && r.hasMore(SHAPE_LINE_SIZE)) {
     shape.line = readShapeLine(r);
+    const fill = readShapeFill(r, payload);
+    if (fill) shape.fill = fill;
+  }
   if (r.hasMore()) shape.trailing = r.rest();
   return shape;
 }
@@ -1476,6 +1480,35 @@ function readShapeLine(r: ByteReader): ShapeLine {
     endArrowFill: bit(properties, 31),
     outlineStyle: r.uint8(),
   };
+}
+
+/**
+ * 테두리 선 뒤의 채우기 정보(표 28). DocInfo 테두리/배경의 {@link readFill}로 읽는다. 그 리더는
+ * 여러 종류가 켜진 채우기에서 하나만 남기고 추가 채우기 속성의 모르는 바이트를 건너뛰므로, 읽은
+ * 값을 다시 써서 원본과 같을 때만 쓴다. 다르면 커서를 되돌리고 `undefined`를 돌려줘, 그 바이트가
+ * `trailing`에 원본 그대로 남게 한다.
+ */
+function readShapeFill(r: ByteReader, payload: Uint8Array): Fill | undefined {
+  if (!r.hasMore(4)) return undefined;
+  const start = r.offset;
+  try {
+    const fill = readFill(r);
+    const original = payload.subarray(start, r.offset);
+    const written = new ByteWriter();
+    writeFill(written, fill);
+    const bytes = written.finish();
+    if (
+      bytes.length === original.length &&
+      bytes.every((b, i) => b === original[i])
+    )
+      return fill;
+  } catch (error) {
+    // 짧은 레코드나 라이터가 거부하는 값도 원본 그대로 보존한다.
+    if (!(error instanceof RangeError || error instanceof HwpFormatError))
+      throw error;
+  }
+  r.offset = start;
+  return undefined;
 }
 
 /** `value`가 `width`비트 필드에 담기는지 검사한다. `setBits`는 넘치는 비트를 조용히 버린다. */
@@ -1558,6 +1591,7 @@ export function writeShapeComponent(shape: ShapeComponent): ByteWriter {
     matrix(rotation);
   }
   if (shape.line) writeShapeLine(w, shape.line);
+  if (shape.fill) writeFill(w, shape.fill);
   if (shape.trailing) w.bytes(shape.trailing);
   return w;
 }

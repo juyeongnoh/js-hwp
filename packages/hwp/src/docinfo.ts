@@ -332,7 +332,7 @@ function readBorderFill(reader: ByteReader): BorderFill {
  * 바이트 위치를 맞추려고 켜진 블록은 전부 읽지만, 한글처럼 이미지 > 그러데이션 >
  * 단색 순으로 하나만 남긴다.
  */
-function readFill(reader: ByteReader): Fill {
+export function readFill(reader: ByteReader): Fill {
   const kind = reader.uint32();
   let color: ColorFill | undefined;
   let gradient: GradientFill | undefined;
@@ -926,7 +926,7 @@ function writeBorderFill(fill: BorderFill): ByteWriter {
   return writer;
 }
 
-function writeFill(writer: ByteWriter, fill: Fill): void {
+export function writeFill(writer: ByteWriter, fill: Fill): void {
   writer.uint32(FILL_KIND_BITS[fill.kind]);
 
   if (fill.kind === FillKind.Color) {

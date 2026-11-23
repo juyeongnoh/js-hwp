@@ -3,10 +3,13 @@ import { join } from 'node:path'
 import {
   ArrowSize,
   ArrowStyle,
+  FillKind,
+  HatchStyle,
   LineEndCap,
   LineStyle,
   OutlineStyle,
   type Control,
+  type Fill,
   type ShapeComponent,
   type ShapeLine,
 } from '@js-hwp/core'
@@ -70,7 +73,16 @@ describe('저장소 HWP 파일의 SHAPE_COMPONENT', () => {
 
   it.each(withShapes.map((f) => [f.slice(root.length + 1), f]))('%s 모델로 읽음', (_, file) => {
     const payloads = shapeComponents(new Uint8Array(readFileSync(file)))
-    for (const p of payloads) expect(readShapeComponent(Buffer.from(p, 'hex'))).toBeDefined()
+    for (const p of payloads) {
+      const shape = readShapeComponent(Buffer.from(p, 'hex'))
+      expect(shape).toBeDefined()
+      // 저장소의 그리기 개체는 사각형뿐이고, 모두 테두리 선과 채우기를 모델로 읽는다.
+      if (shape!.shapeId === '$rec') {
+        expect(shape!.line).toBeDefined()
+        expect(shape!.fill).toBeDefined()
+        expect(shape!.trailing).toHaveLength(22)
+      }
+    }
   })
 })
 
@@ -112,9 +124,16 @@ describe('개체 요소 속성 값 (한글 2024)', () => {
       endArrowFill: true,
       outlineStyle: OutlineStyle.Normal,
     })
-    // 테두리 선 13바이트 뒤는 채우기 정보로 시작한다. 채우기 종류 1(단색).
-    expect(shape.trailing).toHaveLength(56 - 13)
-    expect(Buffer.from(shape.trailing!).readUInt32LE(0)).toBe(1)
+    // 테두리 선 뒤의 채우기 정보 21바이트: 흰색 단색, 무늬 없음.
+    expect(shape.fill).toEqual({
+      kind: FillKind.Color,
+      background: { r: 0xff, g: 0xff, b: 0xff, unknown: 0 },
+      pattern: { style: HatchStyle.None, color: { r: 0, g: 0, b: 0, unknown: 0 } },
+      unknown: 0,
+    })
+    // 그 뒤의 명세에 없는 22바이트. 회색 b2b2b2가 보인다(그림자로 추정).
+    expect(shape.trailing).toHaveLength(56 - 13 - 21)
+    expect(hex(shape.trailing!.subarray(4, 8))).toBe('b2b2b200')
     // SHAPE_COMPONENT는 childRecords에 없고, 그 자식(도형별 레코드)은 깊이 1로 남는다.
     expect(rect!.childRecords?.map((r) => [r.tagId, r.depth])).toEqual([
       [SectionTag.ShapeComponentRectangle, 1],
@@ -126,6 +145,7 @@ describe('개체 요소 속성 값 (한글 2024)', () => {
     const pic = drawingObjects(doc).find((c) => c.shapeComponent?.shapeId === '$pic')!
     expect(pic.shapeComponent).toMatchObject({ width: 7381, height: 4500, unknownBits: 0x24080000 })
     expect(pic.shapeComponent!.line).toBeUndefined()
+    expect(pic.shapeComponent!.fill).toBeUndefined()
     expect(pic.shapeComponent!.trailing).toBeUndefined()
   })
 })
@@ -172,6 +192,36 @@ describe('읽은 개체 요소 속성을 고치면', () => {
     after!.writeUInt32LE(before!.readUInt32LE(8 + 20), 8 + 20)
     after!.writeUInt32LE(before!.readUInt32LE(8 + 28), 8 + 28)
     expect(hex(after!)).toBe(hex(before!))
+  })
+})
+
+describe('읽은 채우기를 고치면', () => {
+  it('채우기 바이트만 바뀌고 나머지는 그대로다', () => {
+    const path = 'docs/experiments/object-common-props/rect-caption-bottom.hwp'
+    const bytes = new Uint8Array(readFileSync(join(root, path)))
+    const doc = parseHwp(bytes)
+    const shape = drawingObjects(doc)[0]!.shapeComponent!
+    const fill = shape.fill as Extract<Fill, { kind: FillKind.Color }>
+    fill.background = { r: 0x12, g: 0x34, b: 0x56, unknown: 0 }
+
+    const [before] = shapeComponents(bytes).map((h) => Buffer.from(h, 'hex'))
+    const [after] = shapeComponents(serializeHwp(doc)).map((h) => Buffer.from(h, 'hex'))
+    // 테두리 선 뒤 채우기 종류 4바이트 다음이 배경색이다.
+    const at = 8 + 42 + 2 + 48 * 3 + 13 + 4
+    expect(hex(after!.subarray(at, at + 4))).toBe('12345600')
+    after!.set(before!.subarray(at, at + 4), at)
+    expect(hex(after!)).toBe(hex(before!))
+  })
+
+  it('채우기 없음으로 바꾸면 종류와 추가 속성 길이만 쓴다', () => {
+    const path = 'docs/experiments/object-common-props/rect-caption-bottom.hwp'
+    const doc = parseHwp(new Uint8Array(readFileSync(join(root, path))))
+    const shape = drawingObjects(doc)[0]!.shapeComponent!
+    shape.fill = { kind: FillKind.None }
+    const [after] = shapeComponents(serializeHwp(doc)).map((h) => Buffer.from(h, 'hex'))
+    const at = 8 + 42 + 2 + 48 * 3 + 13
+    expect(hex(after!.subarray(at, at + 8))).toBe('0000000000000000')
+    expect(hex(after!.subarray(at + 8))).toBe(hex(shape.trailing!))
   })
 })
 
@@ -245,6 +295,53 @@ describe('readShapeComponent', () => {
   it('테두리 선보다 짧으면 테두리 선으로 읽지 않는다', () => {
     const shape = { ...sample(), trailing: new Uint8Array(12) }
     expect(readShapeComponent(writeShapeComponent(shape).finish())).toEqual(shape)
+  })
+
+  const lineBytes = (): Uint8Array => {
+    const written = writeShapeComponent({ ...sample(), line: line() }).finish()
+    return written.subarray(8 + 42 + 2 + 48 * 3)
+  }
+  const withTail = (tail: number[]): Uint8Array => {
+    const head = writeShapeComponent({ ...sample(), line: line() }).finish()
+    return Uint8Array.from([...head, ...tail])
+  }
+
+  it('채우기를 쓰고 다시 읽는다', () => {
+    const shape: ShapeComponent = {
+      ...sample(),
+      line: line(),
+      fill: {
+        kind: FillKind.Color,
+        background: { r: 1, g: 2, b: 3, unknown: 0 },
+        pattern: { style: HatchStyle.None, color: { r: 0, g: 0, b: 0, unknown: 0 } },
+        unknown: 0,
+      },
+      trailing: Uint8Array.of(9, 9),
+    }
+    const bytes = writeShapeComponent(shape).finish()
+    expect(bytes).toHaveLength(8 + 42 + 2 + 48 * 3 + 13 + 21 + 2)
+    expect(readShapeComponent(bytes)).toEqual(shape)
+  })
+
+  it('다시 쓰면 바이트가 달라지는 채우기는 trailing에 원본 그대로 남긴다', () => {
+    expect(lineBytes()).toHaveLength(13)
+    // 단색과 이미지가 함께 켜진 채우기(종류 3). 리더는 이미지 하나만 남긴다.
+    const multi = [
+      3, 0, 0, 0, ...[255, 255, 255, 0], ...[0, 0, 0, 0], ...[255, 255, 255, 255],
+      ...[0, 0, 0, 0, 1, 0], ...[0, 0, 0, 0], 0, 0,
+    ]
+    const shape = readShapeComponent(withTail(multi))!
+    expect(shape.line).toEqual(line())
+    expect(shape.fill).toBeUndefined()
+    expect([...shape.trailing!]).toEqual(multi)
+    // 추가 채우기 속성에 모르는 바이트가 있는 단색 채우기.
+    const extra = [1, 0, 0, 0, ...new Array(12).fill(0), 2, 0, 0, 0, 7, 7, 0]
+    expect([...readShapeComponent(withTail(extra))!.trailing!]).toEqual(extra)
+    // 단색 블록 중간에서 끝나는 짧은 채우기.
+    const short = [1, 0, 0, 0, 255, 255]
+    const shortShape = readShapeComponent(withTail(short))!
+    expect(shortShape.fill).toBeUndefined()
+    expect([...shortShape.trailing!]).toEqual(short)
   })
 
   it('비트 필드를 넘는 테두리 선 값은 쓰지 않는다', () => {
