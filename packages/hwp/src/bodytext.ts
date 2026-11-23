@@ -639,18 +639,16 @@ const LIST_PROPERTIES_MASK = 0b1111111;
 const LIST_VERTICAL_ALIGN_MASK = 0b11 << 5;
 
 /**
- * 문단 리스트 헤더를 읽는다. `legacy`이면 예전 js-hwp가 쓴 6바이트 헤더(문단 수 UINT16, 속성
- * UINT32)로 읽는다. 한글은 읽을 때 문단 수를 쓰지 않으므로 코덱도 문단 수를 버리고 문단을 레코드
- * 구조로 나눈다.
+ * 문단 리스트 헤더(문단 수 UINT32, 속성 UINT32, 정정 83)를 읽는다. 한글은 읽을 때 문단 수를 쓰지
+ * 않으므로 코덱도 문단 수를 버리고 문단을 레코드 구조로 나눈다.
  *
  * 속성은 bit 0~2 글자 방향, bit 3~4 줄바꿈, bit 5~6 세로 정렬로 읽는다. 기본값(가로, 일반 줄바꿈)은
  * 필드를 두지 않는다. 세로 정렬은 0~2면 늘 필드로 두고, 범위 밖 3은 bit 7~31과 함께
  * `listUnknownBits`에 남긴다.
  */
-function readListHeader(payload: Uint8Array, legacy: boolean): ListHeaderRead {
+function readListHeader(payload: Uint8Array): ListHeaderRead {
   const reader = new ByteReader(payload);
-  if (legacy) reader.optionalUint16();
-  else reader.optionalUint32();
+  reader.optionalUint32();
   const properties = reader.optionalUint32();
 
   const list: Omit<ParagraphList, "paragraphs"> = {};
@@ -706,7 +704,7 @@ type OpaqueParagraphList = ParagraphList & { listTrailing?: Uint8Array };
 /**
  * LIST_HEADER로 시작하는 문단 리스트들을 읽는다. 한글은 문단을 LIST_HEADER의 자식이
  * 아니라 같은 레벨의 형제로 뒤에 둔다(정오표 53, 68). 다음 LIST_HEADER까지의 문단이
- * 그 리스트의 문단이다. 예전 js-hwp처럼 문단을 LIST_HEADER 아래에 둔 파일도 읽는다.
+ * 그 리스트의 문단이다.
  */
 function readParagraphLists(
   children: RecordNode[],
@@ -716,15 +714,8 @@ function readParagraphLists(
   let current: OpaqueParagraphList | undefined;
   for (const child of children) {
     if (child.tagId === SectionTag.ListHeader) {
-      // 예전 js-hwp는 새 리스트를 6바이트(문단 수 UINT16 + 속성 0)로 썼다.
-      const { list, reader } = readListHeader(
-        child.payload,
-        child.payload.length < 8,
-      );
-      current = {
-        ...list,
-        paragraphs: readParagraphList(child.children, context),
-      };
+      const { list, reader } = readListHeader(child.payload);
+      current = { ...list, paragraphs: [] };
       const trailing = reader.rest();
       if (trailing.length > 0) current.listTrailing = trailing.slice();
       lists.push(current);
@@ -1096,7 +1087,7 @@ function readTable(
     } else if (!seenTable) {
       continue;
     } else if (child.tagId === SectionTag.ListHeader) {
-      current = readTableCell(child, context);
+      current = readTableCell(child);
       const row = rows[current.row] ?? rows[rows.length - 1];
       row?.cells.push(current);
     } else if (child.tagId === SectionTag.ParaHeader && current) {
@@ -1122,8 +1113,8 @@ function readTable(
  * 캡션 폭 HWPUNIT, 틀과의 간격 HWPUNIT16, 텍스트 최대 길이 HWPUNIT(표 72), 나머지(한글 2024는
  * 0 8바이트). 문단은 이 레코드의 형제로 뒤따른다(정정 84).
  */
-function readCaption(node: RecordNode, context: ParseContext): Caption {
-  const { list, reader } = readListHeader(node.payload, false);
+function readCaption(node: RecordNode): Caption {
+  const { list, reader } = readListHeader(node.payload);
   const properties = reader.optionalUint32();
   const width = reader.optionalUint32();
   const gap = reader.optionalUint16();
@@ -1135,8 +1126,7 @@ function readCaption(node: RecordNode, context: ParseContext): Caption {
     width,
     gap,
     maxWidth,
-    // 예전 js-hwp처럼 문단을 LIST_HEADER 아래에 둔 파일도 읽는다.
-    paragraphs: readParagraphList(node.children, context),
+    paragraphs: [],
     unknownBits: (properties & ~0b111) >>> 0,
     trailing: Array.from(reader.rest()),
   };
@@ -1156,7 +1146,7 @@ function readLeadingCaption(
   for (const child of node.children) {
     if (child.tagId === stopTag) break;
     if (child.tagId === SectionTag.ListHeader && !caption)
-      caption = readCaption(child, context);
+      caption = readCaption(child);
     else if (child.tagId === SectionTag.ParaHeader && caption)
       caption.paragraphs.push(readParagraph(child, context));
   }
@@ -1237,11 +1227,12 @@ function cellListProperties(cell: TableCell): number {
   return properties;
 }
 
-function readTableCell(node: RecordNode, context: ParseContext): TableCell {
-  // 리스트 헤더 뒤의 셀 필드(열·행·병합·크기·여백·테두리)는 26바이트다. 전체가 34바이트 미만이면
-  // 예전 js-hwp가 쓴 6바이트 헤더다.
-  const legacy = node.payload.length < 34;
-  const { list, reader } = readListHeader(node.payload, legacy);
+/**
+ * 셀 LIST_HEADER: 문단 리스트 헤더 8바이트 뒤에 셀 속성(표 80) 26바이트(열·행·병합·크기·여백·
+ * 테두리)가 온다. 셀 문단은 이 레코드의 형제로 뒤따르므로 호출하는 쪽이 채운다.
+ */
+function readTableCell(node: RecordNode): TableCell {
+  const { list, reader } = readListHeader(node.payload);
 
   const col = reader.optionalUint16();
   const row = reader.optionalUint16();
@@ -1257,8 +1248,8 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
     bottom: reader.optionalUint16(),
   };
   const borderFillRef = reader.optionalUint16();
-  // 표 80 뒤의 바이트(명세에 없음)는 그대로 보존한다. 예전 js-hwp의 6바이트 헤더 셀은 두지 않는다.
-  const trailing = legacy ? undefined : reader.rest().slice();
+  // 표 80 뒤의 바이트(명세에 없음)는 그대로 보존한다.
+  const trailing = reader.rest().slice();
 
   return {
     col,
@@ -1270,8 +1261,8 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
     margins,
     ...idRefField(borderFillRef),
     ...readCellListProperties(list),
-    ...(trailing ? { trailing } : {}),
-    paragraphs: readParagraphList(node.children, context),
+    trailing,
+    paragraphs: [],
   };
 }
 
