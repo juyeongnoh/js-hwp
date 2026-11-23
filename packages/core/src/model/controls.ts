@@ -408,10 +408,16 @@ export enum ArrowSize {
   LargeLarge = 8,
 }
 
-/** Outline style(표 88). */
+/**
+ * Outline style(표 88). HWPX `hp:lineShape`의 `outlineStyle`이다. 한글 2024 대화상자에는 "선 굵기
+ * 내부 적용" 체크박스뿐이라 0과 2만 만들 수 있다. 1은 한글이 보존하고 HWPX `OUTER`로 내보내지만,
+ * 대화상자는 꺼짐으로 보이고 "설정"을 누르면 0으로 바꾼다(정정 90, `experiments/shape-outline-style`).
+ */
 export enum OutlineStyle {
   Normal = 0,
+  /** 대화상자로 만들 수 없다. */
   Outer = 1,
+  /** "선 굵기 내부 적용". */
   Inner = 2,
 }
 

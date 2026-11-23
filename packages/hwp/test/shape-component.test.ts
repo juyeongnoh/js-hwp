@@ -150,6 +150,22 @@ describe('개체 요소 속성 값 (한글 2024)', () => {
   })
 })
 
+describe('Outline style (experiments/shape-outline-style, 한글 2024)', () => {
+  const outline = (file: string) =>
+    drawingObjects(load(`docs/experiments/shape-outline-style/${file}`))[0]!.shapeComponent!.line!.outlineStyle
+
+  it('"선 굵기 내부 적용"은 2, 끄면 0이다', () => {
+    expect(outline('inner.hwp')).toBe(OutlineStyle.Inner)
+    expect(outline('unchecked.hwp')).toBe(OutlineStyle.Normal)
+  })
+
+  it('대화상자가 만들지 않는 1과 범위 밖의 3도 그대로 읽는다', () => {
+    expect(outline('outline-1-resaved.hwp')).toBe(OutlineStyle.Outer)
+    expect(outline('outline-1-dialog-ok.hwp')).toBe(OutlineStyle.Normal)
+    expect(outline('outline-3-resaved.hwp')).toBe(3)
+  })
+})
+
 describe('읽은 테두리 선을 고치면', () => {
   it('테두리 선 13바이트만 바뀌고 나머지는 그대로다', () => {
     const path = 'docs/experiments/object-common-props/rect-caption-bottom.hwp'
