@@ -328,6 +328,21 @@ export interface TableControl {
   repeatHeaderRows?: number;
   /** 왕복을 위해 기록해두는 자동 맞춤 동작. */
   noAdjust?: boolean;
+  /**
+   * 셀 영역(표 74 Valid Zone Info, 표 78 영역 속성, HWPX `cellzone`). 셀 범위에 테두리/배경을
+   * 지정한 기록이다. 개수(Valid Zone Info Size)는 배열 길이로 정한다. 없으면 0개로 쓴다.
+   */
+  cellZones?: CellZone[];
+}
+
+/** 표의 셀 영역(표 78). 주소는 0부터 세고 시작·끝 셀을 포함한다. */
+export interface CellZone {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+  /** {@link HwpDocument.borderFills}의 인덱스. */
+  borderFillId?: number;
 }
 
 // ---------------------------------------------------------------------------

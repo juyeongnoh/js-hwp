@@ -92,6 +92,7 @@
 | 84   | 표 71 「캡션 리스트」, 표 72 「캡션」 | 표 71: 캡션 12바이트(표 67 참조). 표 72: 속성 자료형 `UNIT`, 전체 14 | 표 71의 캡션은 표 72(14바이트)를 가리켜야 한다. 표 72의 속성은 UINT32다. 한글 2024 파일은 표 72의 14바이트 뒤에 0인 8바이트가 더 있어 캡션 LIST_HEADER가 8 + 14 + 8 = 30바이트였다. 캡션이 있으면 개체 공통 속성 bit 29가 켜지고(정정 81), 캡션 LIST_HEADER는 CTRL_HEADER의 첫 자식이다. 표에서는 TABLE 레코드보다 앞이다. | 아래 E32. `experiments/object-common-props/table-caption-bottom.hwp`, `rect-caption-bottom.hwp`. |
 | 85   | 표 65 「문단 리스트 헤더」, 속성 | bit 0~2 텍스트 방향(0 가로, 1 세로), bit 3~4 줄바꿈, bit 5~6 세로 정렬만 기재 | 보충: 텍스트 방향 2는 세로쓰기·영문 세움(HWPX `VERTICALALL`)이다. 셀 LIST_HEADER의 bit 16~20은 셀 속성으로 안 여백 지정, 셀 보호, 제목 셀, 양식 모드에서 편집 가능, `dirty`(HWPX `hp:tc`의 `hasMargin`, `protect`, `header`, `editable`, `dirty`)다. 한글은 bit 24, 26도 켜지만 뜻은 모른다. | 아래 E33. `experiments/list-header-properties`. |
 | 86   | 표 71 「캡션 리스트」, 문단 리스트 헤더의 속성 | 표 65 참조만 기재 | 보충: 캡션 LIST_HEADER의 리스트 속성도 표 65와 같은 배치다. 캡션 대화상자의 "오른쪽 가운데", "오른쪽 아래"에서 가운데·아래는 세로 정렬 bit 5~6 = 1, 2다. 한글이 새로 만든 아래 캡션은 세로 정렬 0(위)이다. | 아래 E34. `experiments/caption-list-properties/table-caption-right-bottom.hwp`. |
+| 87   | 4.3.9.1, 표 74 「표 개체」, 표 75 「표 개체 속성」 | 표 74: HWPTAG_TABLE = 개체 공통 속성(표 68) n + 표 개체 속성(표 75) n2 + 셀 리스트(표 79) n3. 표 75: 전체 22 + (2×row) + (10×zone) | 표 74의 세 부분은 한 레코드가 아니라 세 종류의 레코드에 나뉜다. 개체 공통 속성은 `tbl ` CTRL_HEADER의 페이로드(ctrlId 뒤)에 있다. HWPTAG_TABLE은 그 CTRL_HEADER의 자식이고 페이로드는 표 개체 속성(표 75)뿐이다. 셀 리스트는 TABLE의 자식이 아니라 TABLE 뒤에 오는 형제 LIST_HEADER들이다. 셀 하나가 LIST_HEADER 하나(문단 리스트 헤더 + 셀 속성 표 80)이고, 그 셀의 문단은 다음 LIST_HEADER 전까지 뒤따르는 형제 PARA_HEADER다(정정 84의 캡션과 같은 방식). 셀 LIST_HEADER 수는 Row Size의 합이다. 표 75의 전체 길이 22 + (2×row) + (10×zone)는 TABLE 페이로드 길이와 맞는다. | 아래 E35. 저장소 HWP 파일 153개의 표 464개. |
 
 ## 2026-10-28 실험 기록
 
@@ -883,3 +884,36 @@ Windows용 한글 2024를 자동화(COM)로 조작해, 표 셀의 속성(`TableP
 - 캡션의 글자 방향, 줄바꿈을 바꾸는 메뉴와 그 비트. 같은 폴더의 비트를 바꾼 파일을 한글로 다시 저장하는 대조.
 - 새 캡션에서 bit 3이 켜지는 조건.
 - 머리말·꼬리말, 바탕쪽, 메모 LIST_HEADER의 같은 비트.
+
+## 2026-11-23 측정 기록: 표 개체 (표 74, 75, 79)
+
+### E35. 표 개체의 레코드 구조
+
+저장소와 옆 프로젝트 `rhwp`, `hwp-test`, kogl 자료의 HWP 파일 242개 중 표가 있는 153개, 표 464개를 레코드 트리로 읽었다(`scratch/scan-table-tree.ts`, `scratch/scan-zones.ts`). 한글로 새로 저장한 실험은 아니다.
+
+```
+CTRL_HEADER `tbl `      ← ctrlId + 개체 공통 속성(표 68)
+├─ LIST_HEADER          ← 캡션(있을 때만, 정정 84)
+├─ PARA_HEADER …        ← 캡션 문단
+├─ TABLE                ← 표 개체 속성(표 75)
+├─ LIST_HEADER          ← 셀: 문단 리스트 헤더(표 65) + 셀 속성(표 80)
+├─ PARA_HEADER …        ← 그 셀의 문단
+├─ LIST_HEADER          ← 다음 셀
+└─ …
+```
+
+| 확인한 것 | 결과 |
+| --- | --- |
+| TABLE의 부모 | 464개 모두 `tbl ` CTRL_HEADER의 자식 |
+| `tbl ` 하나에 든 TABLE 수 | 464개 모두 1개 |
+| TABLE의 자식 | 464개 모두 없음 |
+| TABLE 뒤의 형제 | 464개 모두 LIST_HEADER로 시작하고 LIST_HEADER와 PARA_HEADER만 있음 |
+| TABLE 뒤 LIST_HEADER 수 | 464개 모두 Row Size 합과 같음 |
+| TABLE 페이로드 길이 | 464개 모두 22 + 2×RowCount + 10×Valid Zone Info Size와 같음. 영역 뒤에 남는 바이트 없음 |
+| Valid Zone Info Size | 448개 0, 16개 1. 영역 16개의 테두리/배경 ID는 모두 1 이상이고 테두리/배경 개수 이하 |
+
+**확인하지 않은 것**
+
+- 영역 속성(표 78)의 테두리/배경 ID가 다른 참조처럼 1부터 세는지. 0인 영역이 없어 코덱은 다른 참조와 같게 1부터 센다고 본다.
+- 5.0.1.0 미만 파일의 TABLE(Valid Zone Info Size가 없는 형식). 말뭉치에 없었다.
+- 표 75 속성의 명세에 없는 bit 3, 24, 25, 26(BACKLOG).

@@ -39,6 +39,7 @@ import {
   type ParagraphList,
   PageBreakInTable,
   RelativeTo,
+  type CellZone,
   type TableCell,
   type TableRow,
   VerticalAlign,
@@ -1043,6 +1044,7 @@ function readTable(
   let borderFillRef = 0;
   let pageBreak = 0;
   let repeatHeaderRows = 0;
+  const cellZones: CellZone[] = [];
 
   if (tableNode) {
     const t = new ByteReader(tableNode.payload);
@@ -1059,6 +1061,19 @@ function readTable(
     for (let i = 0; i < rowCount && t.hasMore(2); i++)
       rowSizes.push(t.uint16());
     borderFillRef = t.optionalUint16();
+    // Valid Zone Info Size와 영역 속성(표 78)은 5.0.1.0부터 있다. 짧은 레코드는 있는 만큼 읽는다.
+    const zoneCount = t.optionalUint16();
+    for (let i = 0; i < zoneCount && t.hasMore(10); i++) {
+      const zone: CellZone = {
+        startCol: t.uint16(),
+        startRow: t.uint16(),
+        endCol: t.uint16(),
+        endRow: t.uint16(),
+      };
+      const borderFillId = fromIdRef(t.uint16());
+      if (borderFillId !== undefined) zone.borderFillId = borderFillId;
+      cellZones.push(zone);
+    }
     pageBreak = bits(properties, 0, 1);
     repeatHeaderRows = bit(properties, 2) ? 1 : 0;
   }
@@ -1098,6 +1113,7 @@ function readTable(
     ...idRefField(borderFillRef),
     pageBreak,
     repeatHeaderRows,
+    ...(cellZones.length > 0 ? { cellZones } : {}),
   };
 }
 
@@ -1232,8 +1248,8 @@ function readTableCell(node: RecordNode, context: ParseContext): TableCell {
   // 병합 수는 파일 값 그대로 둔다(0도). 레코드가 짧아 없을 때만 1로 본다.
   const colSpan = reader.optionalUint16(1);
   const rowSpan = reader.optionalUint16(1);
-  const width = reader.optionalUint32();
-  const height = reader.optionalUint32();
+  const width = reader.hwpUnit();
+  const height = reader.hwpUnit();
   const margins = {
     left: reader.optionalUint16(),
     right: reader.optionalUint16(),
@@ -2184,7 +2200,13 @@ function writeTable(
     body.hwpUnit16(table.cellMargins.bottom);
     for (const row of table.rows) body.uint16(row.cells.length);
     body.uint16(toIdRef(table.borderFillId, "표 테두리 ID"));
-    body.uint16(0); // valid zone count
+    const zones = table.cellZones ?? [];
+    if (zones.length > 0xffff)
+      throw new RangeError(
+        `셀 영역 ${zones.length}개는 65535개를 넘을 수 없다.`,
+      );
+    body.uint16(zones.length);
+    for (const zone of zones) writeCellZone(body, zone);
 
     writer.write(SectionTag.Table, body);
 
@@ -2192,6 +2214,26 @@ function writeTable(
       for (const cell of row.cells) writeTableCell(writer, doc, cell);
     }
   });
+}
+
+/** 영역 속성(표 78): 시작 열·행, 끝 열·행, 테두리/배경 참조. */
+function writeCellZone(body: ByteWriter, zone: CellZone): void {
+  const { startRow, startCol, endRow, endCol } = zone;
+  for (const [name, value] of Object.entries({
+    startRow,
+    startCol,
+    endRow,
+    endCol,
+  })) {
+    if (!Number.isInteger(value) || value < 0 || value > 0xffff)
+      throw new RangeError(`셀 영역 ${name} ${value}는 0~65535 정수여야 한다.`);
+  }
+  body
+    .uint16(startCol)
+    .uint16(startRow)
+    .uint16(endCol)
+    .uint16(endRow)
+    .uint16(toIdRef(zone.borderFillId, "셀 영역 테두리 ID"));
 }
 
 function writeTableCell(
