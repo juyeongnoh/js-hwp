@@ -27,11 +27,7 @@ const files = ['docs/experiments', 'fixtures', 'scratch'].flatMap((d) =>
 
 const OBJECTS = new Set(['tbl ', 'gso ', 'eqed'])
 
-/**
- * 개체 컨트롤(`tbl `, `gso `, `eqed`)의 CTRL_HEADER 페이로드를 나온 순서대로.
- * `gso ` 안(글상자 등)은 건너뛴다. 코덱이 `gso `를 unknown으로 보존하며 자식 레코드를
- * 버리기 때문이다(BACKLOG "unknown 컨트롤의 자식 레코드 손실").
- */
+/** 개체 컨트롤(`tbl `, `gso `, `eqed`)의 CTRL_HEADER 페이로드를 나온 순서대로. `gso ` 안(글상자 등)도 포함한다. */
 function objectHeaders(bytes: Uint8Array): string[] {
   const c = CFB.read(bytes, { type: 'buffer' })
   const header = CFB.find(c, 'FileHeader')!.content as Uint8Array
@@ -42,7 +38,6 @@ function objectHeaders(bytes: Uint8Array): string[] {
       const p = n.payload
       const id = String.fromCharCode(p[3]!, p[2]!, p[1]!, p[0]!)
       if (OBJECTS.has(id)) out.push(Buffer.from(p).toString('hex'))
-      if (id === 'gso ') return
     }
     n.children.forEach(walk)
   }
@@ -53,10 +48,32 @@ function objectHeaders(bytes: Uint8Array): string[] {
   return out
 }
 
+/**
+ * 한글 대화상자가 만들지 않는 값을 넣은 실험 파일(`experiments/object-props-out-of-dialog`)에서 코덱이
+ * 개체 공통 속성을 바꿔 쓰는 것. 그리기 개체 CTRL_HEADER도 표처럼 모델(`placement`)로 쓰기 때문이다.
+ * - bit 29(캡션 있음)는 캡션을 쓸 때만 켠다. 캡션 없이 켜진 파일은 한글이 거부한다.
+ * - 세로 기준 3은 모델에서 문단이라 2로 쓴다. 한글도 문단 기준과 같은 자리에 그렸다.
+ */
+const PLACEMENT_REWRITES: [RegExp, (props: number) => number][] = [
+  [/float-bit29-on\.hwp$/, (p) => (p & ~(1 << 29)) >>> 0],
+  [/float-vrel-3\.hwp$/, (p) => ((p & ~(0b11 << 3)) | (2 << 3)) >>> 0],
+]
+
+/** CTRL_HEADER 페이로드(16진수)의 개체 공통 속성(오프셋 4)을 `rewrite`로 바꾼다. */
+function rewritePlacement(file: string, hex: string): string {
+  const rewrite = PLACEMENT_REWRITES.find(([re]) => re.test(file))?.[1]
+  if (!rewrite) return hex
+  const b = Buffer.from(hex, 'hex')
+  b.writeUInt32LE(rewrite(b.readUInt32LE(4)), 4)
+  return b.toString('hex')
+}
+
 describe('저장소 HWP 파일의 개체 CTRL_HEADER 왕복', () => {
   it.each(files.map((f) => [f.slice(root.length + 1), f]))('%s', (_, file) => {
     const bytes = new Uint8Array(readFileSync(file))
-    expect(objectHeaders(serializeHwp(parseHwp(bytes)))).toEqual(objectHeaders(bytes))
+    // 원본 비트 보존: 실험 파일 2개만 PLACEMENT_REWRITES대로 첫 gso 속성이 바뀐다.
+    const expected = objectHeaders(bytes).map((h, i) => (i === 0 ? rewritePlacement(file, h) : h))
+    expect(objectHeaders(serializeHwp(parseHwp(bytes)))).toEqual(expected)
   })
 })
 

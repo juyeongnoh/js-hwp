@@ -20,6 +20,8 @@ import {
   type Caption,
   type Control,
   type ObjectPlacement,
+  type RawChildRecord,
+  type UnknownControl,
   FieldKind,
   type HwpDocument,
   type InlineItem,
@@ -543,7 +545,30 @@ function readControl(
       if (ctrlId.startsWith("%"))
         return readField(ctrlId, node, reader, context);
   }
-  return { type: "unknown", ctrlId, raw: node.payload };
+  return {
+    type: "unknown",
+    ctrlId,
+    raw: node.payload,
+    ...rawChildRecords(node, node.children),
+  };
+}
+
+/**
+ * 모델이 해석하지 않는 컨트롤의 하위 레코드를 문서 순서대로 평탄화한다. 깊이는 원본 레벨에서
+ * 구하므로 레벨이 건너뛰어도 그대로 다시 쓴다.
+ */
+function rawChildRecords(
+  control: RecordNode,
+  children: RecordNode[],
+): { childRecords?: RawChildRecord[] } {
+  const out: RawChildRecord[] = [];
+  const base = control.level + 1;
+  const visit = (n: RecordNode): void => {
+    out.push({ tagId: n.tagId, depth: n.level - base, payload: n.payload });
+    n.children.forEach(visit);
+  };
+  children.forEach(visit);
+  return out.length ? { childRecords: out } : {};
 }
 
 function readField(
@@ -1151,15 +1176,24 @@ function readLeadingCaption(
   stopTag: number,
   context: ParseContext,
 ): Caption | undefined {
-  let caption: Caption | undefined;
+  const [header, ...paragraphs] = leadingCaptionNodes(node, stopTag);
+  if (!header) return undefined;
+  const caption = readCaption(header);
+  for (const p of paragraphs)
+    caption.paragraphs.push(readParagraph(p, context));
+  return caption;
+}
+
+/** {@link readLeadingCaption}이 읽는 자식: 캡션 LIST_HEADER와 그 뒤 문단. 캡션이 없으면 빈 배열. */
+function leadingCaptionNodes(node: RecordNode, stopTag: number): RecordNode[] {
+  const out: RecordNode[] = [];
   for (const child of node.children) {
     if (child.tagId === stopTag) break;
-    if (child.tagId === SectionTag.ListHeader && !caption)
-      caption = readCaption(child);
-    else if (child.tagId === SectionTag.ParaHeader && caption)
-      caption.paragraphs.push(readParagraph(child, context));
+    if (child.tagId === SectionTag.ListHeader && !out.length) out.push(child);
+    else if (child.tagId === SectionTag.ParaHeader && out.length)
+      out.push(child);
   }
-  return caption;
+  return out;
 }
 
 function writeCaption(
@@ -1305,11 +1339,18 @@ function readDrawingObject(
   }
 
   void shapeNode;
+  // CTRL_HEADER는 placement로, 캡션은 placement.caption으로 쓰고 나머지 자식은 그대로 보존한다.
+  const captionNodes = new Set(
+    leadingCaptionNodes(node, SectionTag.ShapeComponent),
+  );
   return {
     type: "unknown",
     ctrlId: CtrlId.DrawingObject,
     placement,
-    raw: node.payload,
+    ...rawChildRecords(
+      node,
+      node.children.filter((c) => !captionNodes.has(c)),
+    ),
   };
 }
 
@@ -1958,16 +1999,15 @@ function writeControl(
       );
       return;
     }
-    default: {
-      const raw = control.type === "unknown" ? control.raw : undefined;
-      if (raw) writer.write(SectionTag.CtrlHeader, raw);
-      else
-        writer.write(
-          SectionTag.CtrlHeader,
-          new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject)),
-        );
+    case "unknown":
+      writeUnknownControl(writer, doc, control);
       return;
-    }
+    default:
+      writer.write(
+        SectionTag.CtrlHeader,
+        new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject)),
+      );
+      return;
   }
 }
 
@@ -2271,6 +2311,33 @@ function writeTableCell(
       index === cell.paragraphs.length - 1,
       cell.width,
     );
+  });
+}
+
+/**
+ * 모델이 해석하지 않는 컨트롤. 개체 공통 속성을 읽은 그리기 개체는 CTRL_HEADER와 캡션을
+ * 모델로 쓰고, 그 밖에는 원본 페이로드를 쓴다. 하위 레코드는 읽은 그대로 붙인다.
+ */
+function writeUnknownControl(
+  writer: RecordWriter,
+  doc: HwpDocument,
+  control: UnknownControl,
+): void {
+  const { placement } = control;
+  let header: Uint8Array | ByteWriter;
+  if (placement && !control.raw) {
+    header = new ByteWriter().uint32(writeCtrlId(control.ctrlId));
+    writeObjectPlacement(header, placement, 0, placement.caption !== undefined);
+  } else {
+    header =
+      control.raw ?? new ByteWriter().uint32(writeCtrlId(control.ctrlId));
+  }
+  writer.nested(SectionTag.CtrlHeader, header, () => {
+    // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
+    if (placement?.caption && !control.raw)
+      writeCaption(writer, doc, placement.caption, placement.width);
+    for (const r of control.childRecords ?? [])
+      writer.writeAt(r.depth, r.tagId, r.payload);
   });
 }
 

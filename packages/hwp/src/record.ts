@@ -174,6 +174,12 @@ export class RecordWriter {
     return this;
   }
 
+  /** 현재 레벨보다 `depth`만큼 깊은 레벨에 레코드를 내보낸다(읽은 하위 레코드를 그대로 다시 쓸 때). */
+  writeAt(depth: number, tagId: number, payload: Uint8Array): this {
+    this.#records.push({ tagId, level: this.#level + depth, payload });
+    return this;
+  }
+
   /** 레코드를 내보내고 그 자식을 한 레벨 깊게 중첩한다. */
   nested(
     tagId: number,

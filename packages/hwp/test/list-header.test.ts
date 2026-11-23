@@ -17,8 +17,7 @@ const files = ['docs/experiments', 'fixtures', 'scratch'].flatMap((d) =>
 
 /**
  * 모든 LIST_HEADER 페이로드의 앞 `length`바이트를 16진수로 모은다. 기본은 공통 헤더 8바이트(문단 수,
- * 속성, 정정 83)이고, `Infinity`면 페이로드 전체다. `gso ` 안은 건너뛴다. 코덱이 `gso `를 unknown으로
- * 보존하며 자식 레코드를 버리기 때문이다(BACKLOG).
+ * 속성, 정정 83)이고, `Infinity`면 페이로드 전체다. `gso ` 안(그리기 개체 캡션, 글상자)도 포함한다.
  */
 function listHeads(bytes: Uint8Array, length = 8): string[] {
   const c = CFB.read(bytes, { type: 'buffer' })
@@ -27,7 +26,6 @@ function listHeads(bytes: Uint8Array, length = 8): string[] {
   const out: string[] = []
   const walk = (n: RecordNode): void => {
     if (n.tagId === SectionTag.ListHeader) out.push(Buffer.from(n.payload.subarray(0, length)).toString('hex'))
-    if (n.tagId === SectionTag.CtrlHeader && String.fromCharCode(n.payload[3]!, n.payload[2]!, n.payload[1]!, n.payload[0]!) === 'gso ') return
     n.children.forEach(walk)
   }
   for (const p of c.FullPaths.filter((p) => /BodyText\/Section\d+$/.test(p))) {

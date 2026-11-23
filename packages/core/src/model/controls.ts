@@ -781,12 +781,29 @@ export interface FormObjectControl {
   placement: ObjectPlacement;
 }
 
+/** 모델이 해석하지 않는 컨트롤 하위 레코드. */
+export interface RawChildRecord {
+  tagId: number;
+  /** 컨트롤 CTRL_HEADER 기준 깊이. 직계 자식이 0이다. */
+  depth: number;
+  payload: Uint8Array;
+}
+
 /** 프레임은 파싱했지만 본문은 못 한 것. 왕복을 위해 보관한다. */
 export interface UnknownControl {
   type: "unknown";
   ctrlId: string;
-  /** 라이터가 그대로 다시 내보낼 수 있도록 남긴 원시 레코드 페이로드. */
+  /**
+   * 라이터가 그대로 다시 내보낼 수 있도록 남긴 원시 레코드 페이로드. `placement`를 읽은
+   * 그리기 개체(`gso `)는 CTRL_HEADER를 `placement`로 쓰므로 이 값을 두지 않는다.
+   */
   raw?: Uint8Array;
+  /**
+   * CTRL_HEADER 아래의 레코드(그리기 개체의 SHAPE_COMPONENT, 글상자 문단, 수식 등)를 문서
+   * 순서대로 보존한 것. `depth`는 CTRL_HEADER의 직계 자식이 0이다. `placement.caption`으로
+   * 읽은 캡션 레코드는 여기에 넣지 않는다.
+   */
+  childRecords?: RawChildRecord[];
   /** 텍스트에서 이 컨트롤을 가리키는 제어 문자. 없으면 11(그리기 개체)로 쓴다. */
   charCode?: number;
   placement?: ObjectPlacement;
