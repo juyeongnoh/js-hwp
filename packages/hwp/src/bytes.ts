@@ -98,6 +98,14 @@ export class ByteReader {
     return value;
   }
 
+  /** double. IEEE 754 배정밀도. */
+  float64(): number {
+    this.#need(8);
+    const value = this.#view.getFloat64(this.#offset, true);
+    this.#offset += 8;
+    return value;
+  }
+
   /** HWPUNIT: 부호 없는 1/7200인치 길이. */
   hwpUnit(): number {
     return this.uint32();
@@ -264,6 +272,20 @@ export class ByteWriter {
   int32(value: number): this {
     checkInt(value, -0x80000000, 0x7fffffff, "INT32");
     return this.uint32(value < 0 ? value + 0x100000000 : value);
+  }
+
+  /** double. 유한한 값만 받는다. */
+  float64(value: number): this {
+    if (!Number.isFinite(value))
+      throw new RangeError(`${value}는 유한한 double이 아니다.`);
+    this.#ensure(8);
+    new DataView(this.#buffer.buffer, this.#buffer.byteOffset).setFloat64(
+      this.#length,
+      value,
+      true,
+    );
+    this.#length += 8;
+    return this;
   }
 
   hwpUnit(value: number): this {

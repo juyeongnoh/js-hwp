@@ -21,6 +21,9 @@ import {
   type Control,
   type ObjectPlacement,
   type RawChildRecord,
+  type ShapeComponent,
+  type ShapeLine,
+  type ShapeMatrix,
   type UnknownControl,
   FieldKind,
   type HwpDocument,
@@ -1338,20 +1341,225 @@ function readDrawingObject(
     };
   }
 
-  void shapeNode;
-  // CTRL_HEADER는 placement로, 캡션은 placement.caption으로 쓰고 나머지 자식은 그대로 보존한다.
+  // CTRL_HEADER는 placement로, 캡션은 placement.caption으로, SHAPE_COMPONENT는 shapeComponent로
+  // 쓰고 나머지 레코드는 그대로 보존한다.
   const captionNodes = new Set(
     leadingCaptionNodes(node, SectionTag.ShapeComponent),
   );
+  const rest = node.children.filter((c) => !captionNodes.has(c));
+  // SHAPE_COMPONENT가 캡션 바로 뒤에 있을 때만 모델로 읽는다. 쓸 때 그 자리에 다시 쓰기 때문이다.
+  const shapeComponent =
+    shapeNode && rest[0] === shapeNode
+      ? readShapeComponent(shapeNode.payload)
+      : undefined;
+  if (!shapeComponent)
+    return {
+      type: "unknown",
+      ctrlId: CtrlId.DrawingObject,
+      placement,
+      ...rawChildRecords(node, rest),
+    };
   return {
     type: "unknown",
     ctrlId: CtrlId.DrawingObject,
     placement,
-    ...rawChildRecords(
-      node,
-      node.children.filter((c) => !captionNodes.has(c)),
-    ),
+    shapeComponent,
+    ...rawChildRecords(node, [...shapeNode!.children, ...rest.slice(1)]),
   };
+}
+
+/** 개체 요소 속성(표 83) bit 0 수평 반전, bit 1 수직 반전. */
+const SHAPE_COMPONENT_KNOWN = 0b11;
+
+/**
+ * 문단에 놓인 개체의 SHAPE_COMPONENT(표 82~85): 개체 컨트롤 ID 두 번, 개체 요소 속성 42바이트,
+ * Rendering 정보(행렬 쌍 수 WORD, translation matrix, scale/rotation matrix 쌍). 그 뒤 바이트는
+ * `trailing`으로 둔다. ID가 두 번 오지 않거나, 레코드가 행렬보다 짧거나, 유한하지 않은 행렬
+ * 원소가 있으면 해석하지 않는다(`undefined`). 호출하는 쪽이 레코드를 원본 그대로 보존한다.
+ */
+export function readShapeComponent(
+  payload: Uint8Array,
+): ShapeComponent | undefined {
+  const r = new ByteReader(payload);
+  if (!r.hasMore(8 + 42 + 2)) return undefined;
+  const id = r.uint32();
+  if (r.uint32() !== id) return undefined;
+  const groupOffsetX = r.int32();
+  const groupOffsetY = r.int32();
+  const groupLevel = r.uint16();
+  const localVersion = r.uint16();
+  const initialWidth = r.uint32();
+  const initialHeight = r.uint32();
+  const width = r.uint32();
+  const height = r.uint32();
+  const properties = r.uint32();
+  const rotation = r.hwpUnit16();
+  const rotationCenter = { x: r.int32(), y: r.int32() };
+  const count = r.uint16();
+  if (!r.hasMore(48 * (1 + count * 2))) return undefined;
+  const matrix = (): ShapeMatrix => [
+    r.float64(),
+    r.float64(),
+    r.float64(),
+    r.float64(),
+    r.float64(),
+    r.float64(),
+  ];
+  const translation = matrix();
+  const scaleRotations: ShapeComponent["scaleRotations"] = [];
+  for (let i = 0; i < count; i++)
+    scaleRotations.push({ scale: matrix(), rotation: matrix() });
+  const matrices = [
+    translation,
+    ...scaleRotations.flatMap((p) => [p.scale, p.rotation]),
+  ];
+  // NaN·무한대는 다시 쓸 때 같은 비트를 보장하지 못한다.
+  if (!matrices.every((m) => m.every(Number.isFinite))) return undefined;
+
+  const shape: ShapeComponent = {
+    shapeId: readCtrlId(id),
+    groupOffsetX,
+    groupOffsetY,
+    groupLevel,
+    localVersion,
+    initialWidth,
+    initialHeight,
+    width,
+    height,
+    rotation,
+    rotationCenter,
+    translation,
+    scaleRotations,
+  };
+  if (bit(properties, 0)) shape.flipHorizontal = true;
+  if (bit(properties, 1)) shape.flipVertical = true;
+  const unknownBits = (properties & ~SHAPE_COMPONENT_KNOWN) >>> 0;
+  if (unknownBits) shape.unknownBits = unknownBits;
+  // 테두리 선 정보는 그리기 개체에만 있다. 짧으면 해석하지 않고 trailing에 남긴다.
+  if (DRAWING_SHAPE_IDS.has(shape.shapeId) && r.hasMore(SHAPE_LINE_SIZE))
+    shape.line = readShapeLine(r);
+  if (r.hasMore()) shape.trailing = r.rest();
+  return shape;
+}
+
+/** 테두리 선 정보(표 81)를 가진 그리기 개체(4.3.9.2): 선, 사각형, 타원, 호, 다각형, 곡선. */
+const DRAWING_SHAPE_IDS = new Set([
+  "$lin",
+  "$rec",
+  "$ell",
+  "$arc",
+  "$pol",
+  "$cur",
+]);
+
+/** 테두리 선 정보의 길이. 명세는 11이지만 선 굵기가 4바이트라 13이다(정정 89). */
+const SHAPE_LINE_SIZE = 13;
+
+/**
+ * 테두리 선 정보(표 86): 색 COLORREF, 굵기 INT32, 속성 UINT32(표 87), Outline style BYTE(표 88).
+ * 속성의 32비트는 모두 명세가 정의한다.
+ */
+function readShapeLine(r: ByteReader): ShapeLine {
+  const color = r.color();
+  const width = r.int32();
+  const properties = r.uint32();
+  return {
+    color,
+    width,
+    style: bits(properties, 0, 5),
+    endCap: bits(properties, 6, 9),
+    startArrow: bits(properties, 10, 15),
+    endArrow: bits(properties, 16, 21),
+    startArrowSize: bits(properties, 22, 25),
+    endArrowSize: bits(properties, 26, 29),
+    startArrowFill: bit(properties, 30),
+    endArrowFill: bit(properties, 31),
+    outlineStyle: r.uint8(),
+  };
+}
+
+/** `value`가 `width`비트 필드에 담기는지 검사한다. `setBits`는 넘치는 비트를 조용히 버린다. */
+function checkBitField(value: number, width: number, name: string): number {
+  if (!Number.isInteger(value) || value < 0 || value >= 2 ** width)
+    throw new RangeError(`${name} ${value}는 ${width}비트(0~${2 ** width - 1})에 담을 수 없다.`);
+  return value;
+}
+
+function writeShapeLine(w: ByteWriter, line: ShapeLine): void {
+  let properties = 0;
+  properties = setBits(properties, 0, 5, checkBitField(line.style, 6, "선 종류"));
+  properties = setBits(properties, 6, 9, checkBitField(line.endCap, 4, "선 끝 모양"));
+  properties = setBits(
+    properties,
+    10,
+    15,
+    checkBitField(line.startArrow, 6, "화살표 시작 모양"),
+  );
+  properties = setBits(
+    properties,
+    16,
+    21,
+    checkBitField(line.endArrow, 6, "화살표 끝 모양"),
+  );
+  properties = setBits(
+    properties,
+    22,
+    25,
+    checkBitField(line.startArrowSize, 4, "화살표 시작 크기"),
+  );
+  properties = setBits(
+    properties,
+    26,
+    29,
+    checkBitField(line.endArrowSize, 4, "화살표 끝 크기"),
+  );
+  properties = setBit(properties, 30, line.startArrowFill);
+  properties = setBit(properties, 31, line.endArrowFill);
+  w.color(line.color)
+    .int32(line.width)
+    .uint32(properties >>> 0)
+    .uint8(line.outlineStyle);
+}
+
+/** {@link readShapeComponent}의 역. 개체 컨트롤 ID를 두 번 쓰고 행렬 쌍 수는 배열 길이로 쓴다. */
+export function writeShapeComponent(shape: ShapeComponent): ByteWriter {
+  if (!/^[\x20-\x7e]{4}$/.test(shape.shapeId))
+    throw new RangeError(
+      `개체 컨트롤 ID는 ASCII 네 글자여야 한다: ${JSON.stringify(shape.shapeId)}`,
+    );
+  const id = writeCtrlId(shape.shapeId);
+  let properties = (shape.unknownBits ?? 0) & ~SHAPE_COMPONENT_KNOWN;
+  properties = setBit(properties, 0, shape.flipHorizontal);
+  properties = setBit(properties, 1, shape.flipVertical);
+  const w = new ByteWriter()
+    .uint32(id)
+    .uint32(id)
+    .int32(shape.groupOffsetX)
+    .int32(shape.groupOffsetY)
+    .uint16(shape.groupLevel)
+    .uint16(shape.localVersion)
+    .uint32(shape.initialWidth)
+    .uint32(shape.initialHeight)
+    .uint32(shape.width)
+    .uint32(shape.height)
+    .uint32(properties >>> 0)
+    .hwpUnit16(shape.rotation)
+    .int32(shape.rotationCenter.x)
+    .int32(shape.rotationCenter.y)
+    .uint16(shape.scaleRotations.length);
+  const matrix = (m: ShapeMatrix): void => {
+    if (m.length !== 6)
+      throw new RangeError(`행렬 원소는 6개여야 한다: ${m.length}개`);
+    m.forEach((v) => w.float64(v));
+  };
+  matrix(shape.translation);
+  for (const { scale, rotation } of shape.scaleRotations) {
+    matrix(scale);
+    matrix(rotation);
+  }
+  if (shape.line) writeShapeLine(w, shape.line);
+  if (shape.trailing) w.bytes(shape.trailing);
+  return w;
 }
 
 /**
@@ -2336,6 +2544,11 @@ function writeUnknownControl(
     // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
     if (placement?.caption && !control.raw)
       writeCaption(writer, doc, placement.caption, placement.width);
+    if (control.shapeComponent)
+      writer.write(
+        SectionTag.ShapeComponent,
+        writeShapeComponent(control.shapeComponent),
+      );
     for (const r of control.childRecords ?? [])
       writer.writeAt(r.depth, r.tagId, r.payload);
   });

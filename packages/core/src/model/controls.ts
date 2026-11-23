@@ -9,7 +9,6 @@
 
 import type { Rgb } from "./color.js";
 import type {
-  BorderLine,
   Fill,
   ImageEffect,
   LineStyle,
@@ -366,16 +365,136 @@ export interface Point {
   y: SHwpUnit;
 }
 
-export interface ShapeOutline {
-  line: BorderLine;
-  /** 화살촉. HWP 열거 값. */
-  headStyle?: number;
-  tailStyle?: number;
-  headSize?: number;
-  tailSize?: number;
-  /** 둥근 이음. */
-  outlineStyle?: number;
-  alpha?: number;
+/** 선 끝 모양(표 87 bit 6~9). 명세 기본값은 그림 Round, 그리기 개체 Flat이다. */
+export enum LineEndCap {
+  Round = 0,
+  Flat = 1,
+}
+
+/** 화살표 모양(표 87 bit 10~15, 16~21). 명세는 끝 모양에만 값을 적었다. */
+export enum ArrowStyle {
+  None = 0,
+  /** 화살 모양. */
+  Arrow = 1,
+  /** 오목한 화살 모양. */
+  Spear = 2,
+  /** 속이 빈 다이아몬드 모양. */
+  EmptyDiamond = 3,
+  /** 속이 빈 원 모양. */
+  EmptyCircle = 4,
+  /** 속이 빈 사각 모양. */
+  EmptyBox = 5,
+  /** 속이 채워진 다이아몬드 모양. */
+  Diamond = 6,
+  /** 속이 채워진 원 모양. */
+  Circle = 7,
+  /** 속이 채워진 사각 모양. */
+  Box = 8,
+}
+
+/**
+ * 화살표 크기(표 87 bit 22~25, 26~29). 이름은 명세의 "작은-작은" 등을 따랐다. 명세는 7과 8을
+ * 모두 "큰-중간"으로 적었는데, 순서로 보아 8은 "큰-큰"이다(한글로 확인하지 않았다).
+ */
+export enum ArrowSize {
+  SmallSmall = 0,
+  SmallMedium = 1,
+  SmallLarge = 2,
+  MediumSmall = 3,
+  MediumMedium = 4,
+  MediumLarge = 5,
+  LargeSmall = 6,
+  LargeMedium = 7,
+  LargeLarge = 8,
+}
+
+/** Outline style(표 88). */
+export enum OutlineStyle {
+  Normal = 0,
+  Outer = 1,
+  Inner = 2,
+}
+
+/**
+ * 그리기 개체의 테두리 선 정보(표 86, 87). SHAPE_COMPONENT에서 Rendering 정보 바로 뒤의 13바이트다.
+ * 명세는 선 굵기를 INT16, 전체 11바이트로 적었지만 한글 파일은 굵기가 4바이트, 전체 13바이트다
+ * (정정 89).
+ */
+export interface ShapeLine {
+  color: Rgb;
+  /** 선 굵기. 한글 기본값 0.12mm는 33이다. */
+  width: SHwpUnit;
+  /**
+   * 선 종류(bit 0~5). 한글 기본 실선이 1이라 테두리선 종류(정정 3)와 같은 번호로 보지만, 실선 밖의
+   * 값은 확인하지 않았다.
+   */
+  style: LineStyle;
+  endCap: LineEndCap;
+  startArrow: ArrowStyle;
+  endArrow: ArrowStyle;
+  startArrowSize: ArrowSize;
+  endArrowSize: ArrowSize;
+  /** 화살표 속을 채운다(bit 30, 31). 한글 기본값은 둘 다 켜짐이다. */
+  startArrowFill: boolean;
+  endArrowFill: boolean;
+  outlineStyle: OutlineStyle;
+}
+
+/**
+ * 3×3 변환 행렬에서 항상 `0, 0, 1`인 마지막 줄을 뺀 원소 6개(표 85). 파일에 저장된 순서
+ * 그대로다.
+ */
+export type ShapeMatrix = [number, number, number, number, number, number];
+
+/**
+ * 개체 요소 속성(표 82~85). 그리기 개체·그림의 SHAPE_COMPONENT 레코드 앞부분이다.
+ * 개체의 크기, 반전, 회전, 그리고 그것을 합친 변환 행렬을 담는다.
+ */
+export interface ShapeComponent {
+  /**
+   * 개체 컨트롤 ID(표 82). `$rec`(사각형), `$pic`(그림) 등. 문단에 놓인 개체는 이 ID를
+   * 두 번 쓴다(명세의 GenShapeObject, 정정 77).
+   */
+  shapeId: string;
+  /** 개체가 속한 묶음 안에서의 X, Y 오프셋. */
+  groupOffsetX: SHwpUnit;
+  groupOffsetY: SHwpUnit;
+  /** 몇 번 묶였는지. */
+  groupLevel: number;
+  /** 개체 요소의 local file version. 한글 2024는 1을 쓴다. */
+  localVersion: number;
+  /** 개체를 만들 때의 폭과 높이. */
+  initialWidth: HwpUnit;
+  initialHeight: HwpUnit;
+  /** 개체의 현재 폭과 높이. */
+  width: HwpUnit;
+  height: HwpUnit;
+  /** 속성 bit 0, 1. */
+  flipHorizontal?: boolean;
+  flipVertical?: boolean;
+  /**
+   * 속성에서 bit 0, 1을 뺀 비트. 명세에 없지만 한글은 bit 19, 24, 26, 29를 쓴다. 뜻은
+   * 모르고, 쓸 때 OR로 합친다.
+   */
+  unknownBits?: number;
+  /** 회전각(HWPUNIT16). 단위는 확인하지 않았다. 저장소 파일은 모두 0이다. */
+  rotation: number;
+  /** 회전 중심(개체 좌표계). 한글은 폭·높이의 절반을 쓴다. */
+  rotationCenter: Point;
+  /** Rendering 정보(표 84)의 translation matrix. */
+  translation: ShapeMatrix;
+  /** scale matrix와 rotation matrix 쌍. 묶을 때마다 하나씩 는다. 개수는 배열 길이로 쓴다. */
+  scaleRotations: { scale: ShapeMatrix; rotation: ShapeMatrix }[];
+  /**
+   * 테두리 선 정보(표 81, 86). 그리기 개체(선, 사각형, 타원, 호, 다각형, 곡선)에만 있고, 그림 등
+   * 다른 개체에는 없다.
+   */
+  line?: ShapeLine;
+  /**
+   * 그 뒤의 바이트. 그리기 개체는 채우기 정보 등(표 81)이 오고, 그림은 비어 있다. 아직 해석하지
+   * 않고 그대로 붙인다.
+   */
+  trailing?: Uint8Array;
 }
 
 /** 그리기 개체 안에 그려지는 텍스트. */
@@ -393,7 +512,7 @@ export interface ShapeTextBox {
 
 interface ShapeBase {
   placement: ObjectPlacement;
-  outline?: ShapeOutline;
+  outline?: ShapeLine;
   fill?: Fill;
   shadow?: {
     kind: number;
@@ -801,12 +920,19 @@ export interface UnknownControl {
   /**
    * CTRL_HEADER 아래의 레코드(그리기 개체의 SHAPE_COMPONENT, 글상자 문단, 수식 등)를 문서
    * 순서대로 보존한 것. `depth`는 CTRL_HEADER의 직계 자식이 0이다. `placement.caption`으로
-   * 읽은 캡션 레코드는 여기에 넣지 않는다.
+   * 읽은 캡션 레코드와 `shapeComponent`로 읽은 SHAPE_COMPONENT 레코드는 여기에 넣지 않는다.
+   * SHAPE_COMPONENT의 자식(글상자, 도형별 레코드)은 여기에 남는다.
    */
   childRecords?: RawChildRecord[];
   /** 텍스트에서 이 컨트롤을 가리키는 제어 문자. 없으면 11(그리기 개체)로 쓴다. */
   charCode?: number;
   placement?: ObjectPlacement;
+  /**
+   * 그리기 개체(`gso `)의 SHAPE_COMPONENT. 있으면 캡션 다음, `childRecords` 앞에 CTRL_HEADER의
+   * 직계 자식으로 쓴다. 레코드가 짧거나 ID가 두 번 오지 않는 등 해석할 수 없으면 두지 않고
+   * 레코드를 `childRecords`에 그대로 남긴다.
+   */
+  shapeComponent?: ShapeComponent;
 }
 
 // ---------------------------------------------------------------------------
