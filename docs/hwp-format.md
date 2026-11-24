@@ -465,16 +465,16 @@ PARA_HEADER (0)
 
 ### 그리기 개체 (`gso `, SHAPE_COMPONENT)
 
-그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 지금은 `gso ` 컨트롤을 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
+그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 사각형은 `RectangleControl`로 읽고 SHAPE_COMPONENT와 사각형 레코드의 필드를 컨트롤에 펼친다(`ShapeBase`). 그 밖의 개체는 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
 
 ```
 CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
   [LIST_HEADER 캡션]          캡션 문단이 형제로 뒤따른다 (placement.caption)
   [PARA_HEADER ...]
-  SHAPE_COMPONENT             아래 표 (shapeComponent)
+  SHAPE_COMPONENT             아래 표 (사각형은 컨트롤에 펼침, 그 밖은 shapeComponent)
     [LIST_HEADER 글상자]      글상자 문단이 형제로 뒤따른다 (childRecords)
     [PARA_HEADER ...]
-    SHAPE_COMPONENT_RECTANGLE 등 도형별 레코드 (사각형은 shapeComponent.rectangle, 그 밖은 childRecords)
+    SHAPE_COMPONENT_RECTANGLE 등 도형별 레코드 (사각형은 RectangleControl, 그 밖은 childRecords)
 ```
 
 **SHAPE_COMPONENT.** 오프셋은 사각형(행렬 쌍 1개) 기준이다. 사각형 252B, 그림 196B다.
@@ -523,14 +523,14 @@ CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
 
 **글상자 LIST_HEADER(33B).** 명세 표 89·90의 글상자 정보는 SHAPE_COMPONENT가 아니라 그 자식 LIST_HEADER에 있고, 순서도 명세와 반대다(정정 91). 공통 헤더 8B(문단 수, 리스트 속성) 뒤에 왼쪽·오른쪽·위·아래 여백 HWPUNIT16 ×4(기본 1mm = 283), 텍스트 최대 폭 HWPUNIT(= 도형 폭), 명세에 없는 0 13B가 온다. 코덱은 아직 해석하지 않고 `childRecords`로 보존한다.
 
-**사각형 개체 속성(SHAPE_COMPONENT_RECTANGLE, 33B).** SHAPE_COMPONENT의 마지막 자식이다. 코덱은 `readShapeRectangle`/`writeShapeRectangle`, 모델은 `ShapeRectangle`이다(정정 93, E42, `experiments/shape-rectangle`).
+**사각형 개체 속성(SHAPE_COMPONENT_RECTANGLE, 33B).** SHAPE_COMPONENT의 마지막 자식이다. 코덱은 `readShapeRectangle`/`writeShapeRectangle`, 모델은 `RectangleControl`의 `cornerCurvature`, `points`, `rectangleTrailing`이다(정정 93, E42, `experiments/shape-rectangle`).
 
 | 오프셋 | 자료형 | 설명 |
 | --- | --- | --- |
 | 0 | BYTE | 모서리 곡률(%). 한글 대화상자의 직각 0, 둥근 모양 20, 반원 50. 곡률 지정은 0~50 (`cornerCurvature`) |
 | 1 | **INT32 ×2 ×4** | 꼭짓점 (x, y) 4개. **명세는 x 4개 다음 y 4개.** 왼쪽 위부터 시계 방향으로 (0, 0), (폭, 0), (폭, 높이), (0, 높이)이고, 폭·높이는 SHAPE_COMPONENT의 처음 폭·높이다. 크기를 바꿔도 그대로다 (`points`) |
 
-코덱은 사각형 레코드가 SHAPE_COMPONENT의 마지막 자식이고 CTRL_HEADER 아래에 그 뒤 레코드가 없을 때만 모델로 읽는다. 그렇지 않거나 33B보다 짧으면 `childRecords`에 원본 그대로 둔다. 33B 뒤의 바이트는 `trailing`으로 보존한다.
+코덱은 사각형 레코드가 SHAPE_COMPONENT의 마지막 자식이고 CTRL_HEADER 아래에 그 뒤 레코드가 없을 때만 `RectangleControl`로 읽는다. 그렇지 않거나 33B보다 짧으면 개체 전체를 `unknown`으로 두고 사각형 레코드를 `childRecords`에 원본 그대로 둔다. 33B 뒤의 바이트는 `rectangleTrailing`으로 보존한다. 글상자 등 그 앞의 자식은 `RectangleControl.childRecords`에 원본 그대로 둔다.
 
 코덱은 앞에서부터 해석할 수 있는 데까지만 모델로 읽는다. ID가 두 번 오지 않거나, 행렬보다 짧거나, 행렬 원소가 유한하지 않으면 SHAPE_COMPONENT 전체를 `childRecords`에 원본 그대로 둔다. 채우기는 읽은 값을 다시 써서 원본과 같을 때만 `fill`로 두고, 채우기나 그림자를 읽지 못하면 그 뒤 바이트를 `trailing`에 남긴다.
 

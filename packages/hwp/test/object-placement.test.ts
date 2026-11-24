@@ -144,8 +144,8 @@ describe('개체 캡션', () => {
 
   it('그리기 개체 캡션을 읽는다 (한글 2024 사각형, 아래 캡션)', () => {
     const doc = parseHwp(new Uint8Array(readFileSync(join(root, 'docs/experiments/object-common-props/rect-caption-bottom.hwp'))))
-    const rect = doc.sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items)).find((i) => i.type === 'unknown' && i.ctrlId === 'gso ')
-    const placement = rect?.type === 'unknown' ? rect.placement : undefined
+    const rect = doc.sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items)).find((i) => i.type === 'rectangle')
+    const placement = rect?.type === 'rectangle' ? rect.placement : undefined
     expect(placement?.caption).toMatchObject({
       side: CaptionSide.Bottom,
       fullSize: false,

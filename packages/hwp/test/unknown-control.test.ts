@@ -95,11 +95,11 @@ describe('읽은 그리기 개체의 캡션을 고치면', () => {
     const doc = parseHwp(bytes)
     const rect = doc.sections[0]!.paragraphs
       .flatMap((p) => p.runs.flatMap((r) => r.items))
-      .find((i): i is Extract<Control, { type: 'unknown' }> => i.type === 'unknown' && i.ctrlId === 'gso ')!
-    expect(rect.placement?.caption).toBeDefined()
+      .find((i): i is Extract<Control, { type: 'rectangle' }> => i.type === 'rectangle')!
+    expect(rect.placement.caption).toBeDefined()
     const original = preservedSubtrees(bytes)[0]!
 
-    rect.placement!.caption = undefined
+    rect.placement.caption = undefined
     const written = preservedSubtrees(serializeHwp(doc))[0]!
     // 캡션 bit 29가 꺼지고 캡션 LIST_HEADER와 문단이 빠진다.
     const props = (t: string[]) => Buffer.from(t[0]!.split(':')[2]!, 'hex').readUInt32LE(4)

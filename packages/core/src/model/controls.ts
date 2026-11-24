@@ -515,34 +515,9 @@ export interface ShapeComponent {
   /** 인스턴스 ID 뒤의 1바이트. 뜻을 모른다. 저장소 파일은 모두 0이다. 없으면 0으로 쓴다. */
   afterInstanceId?: number;
   /**
-   * 사각형(`$rec`)의 자식 레코드 SHAPE_COMPONENT_RECTANGLE(표 94). SHAPE_COMPONENT의 마지막 자식으로
-   * 글상자 뒤에 오고, 쓸 때도 그 자리에 쓴다. 해석할 수 없으면 두지 않고 `childRecords`에 남긴다.
-   */
-  rectangle?: ShapeRectangle;
-  /**
    * 그 뒤의 바이트. 지금까지 본 그리기 개체는 그림자 뒤에서 레코드가 끝났고, 그림은 Rendering 정보
    * 뒤가 비어 있다. 채우기나 그림자를 모델로 읽지 못하면 그 바이트가 여기에 원본 그대로 남는다.
    */
-  trailing?: Uint8Array;
-}
-
-/**
- * 사각형 개체 속성(표 94). 33바이트: 모서리 곡률 BYTE, 꼭짓점 4개. 명세는 x 4개 다음 y 4개로 적었지만
- * 실제는 (x, y) 쌍 4개다(정정 93, E42, `experiments/shape-rectangle`).
- */
-export interface ShapeRectangle {
-  /**
-   * 모서리 곡률(%). 한글 2024 대화상자의 직각 0, 둥근 모양 20, 반원 50이고 "곡률 지정"은 0~50만
-   * 받는다. 짧은 변에 대한 비율이다.
-   */
-  cornerCurvature: number;
-  /**
-   * 꼭짓점 4개(개체 좌표계). 한글은 왼쪽 위부터 시계 방향으로 (0, 0), (폭, 0), (폭, 높이), (0, 높이)를
-   * 쓴다. 폭·높이는 개체를 만들 때의 크기(`initialWidth`, `initialHeight`)이고, 크기를 바꿔도
-   * 그대로다. 바뀐 크기는 SHAPE_COMPONENT의 현재 폭·높이와 scale matrix에 담긴다.
-   */
-  points: [Point, Point, Point, Point];
-  /** 33바이트 뒤의 바이트. 지금까지 본 파일에는 없다. 그대로 붙인다. */
   trailing?: Uint8Array;
 }
 
@@ -596,7 +571,24 @@ export interface ShapeTextBox {
   autoExpand?: boolean;
 }
 
-interface ShapeBase {
+/**
+ * 문단에 놓인 그리기 개체 공통: CTRL_HEADER(`placement`)와 SHAPE_COMPONENT를 펼친 것. 개체 ID
+ * (`$rec` 등)는 컨트롤의 `type`이 정하므로 두지 않는다.
+ */
+export interface ShapeBase extends Omit<ShapeComponent, "shapeId"> {
+  placement: ObjectPlacement;
+  /**
+   * SHAPE_COMPONENT 아래에서 모델로 읽지 않은 레코드(지금은 글상자 LIST_HEADER와 문단). `depth`는
+   * CTRL_HEADER 기준이다. SHAPE_COMPONENT 바로 뒤, 도형별 레코드 앞에 쓴다.
+   */
+  childRecords?: RawChildRecord[];
+}
+
+/**
+ * 실측 전에 명세만 보고 잡은 초기 설계. 아직 모델로 읽지 않는 개체 타입이 쓴다. 개체를 파싱할 때
+ * {@link ShapeBase}로 옮긴다.
+ */
+interface LegacyShapeBase {
   placement: ObjectPlacement;
   outline?: ShapeLine;
   fill?: Fill;
@@ -608,7 +600,7 @@ interface ShapeBase {
   textBox?: ShapeTextBox;
 }
 
-export interface PictureControl extends ShapeBase {
+export interface PictureControl extends LegacyShapeBase {
   type: "picture";
   /** {@link HwpDocument.binData}의 인덱스. */
   binDataId: number;
@@ -624,19 +616,32 @@ export interface PictureControl extends ShapeBase {
   originalSize?: { width: HwpUnit; height: HwpUnit };
 }
 
-export interface LineControl extends ShapeBase {
+export interface LineControl extends LegacyShapeBase {
   type: "line";
   start: Point;
   end: Point;
 }
 
+/**
+ * 사각형(`$rec`). 도형별 레코드 SHAPE_COMPONENT_RECTANGLE(표 94, 33바이트)을 펼친 것이다. 명세는
+ * 꼭짓점을 x 4개 다음 y 4개로 적었지만 실제는 (x, y) 쌍 4개다(정정 93, E42,
+ * `experiments/shape-rectangle`).
+ */
 export interface RectangleControl extends ShapeBase {
   type: "rectangle";
-  /** 모서리 둥글기. 짧은 변에 대한 비율로 0-100. */
-  cornerRadius?: number;
+  /** 모서리 곡률(%). 한글 대화상자는 직각 0, 둥근 모양 20, 반원 50이고 0~50만 받는다. 파일 값은 BYTE 그대로 보존. */
+  cornerCurvature: number;
+  /**
+   * 꼭짓점 4개(개체 좌표계). 한글은 왼쪽 위부터 시계 방향으로 (0, 0), (폭, 0), (폭, 높이), (0, 높이)를
+   * 쓴다. 폭·높이는 개체를 만들 때의 크기(`initialWidth`, `initialHeight`)이고, 크기를 바꿔도
+   * 그대로다. 바뀐 크기는 현재 폭·높이와 scale matrix에 담긴다.
+   */
+  points: [Point, Point, Point, Point];
+  /** 사각형 레코드 33바이트 뒤의 바이트. 지금까지 본 파일에는 없다. 그대로 붙인다. */
+  rectangleTrailing?: Uint8Array;
 }
 
-export interface EllipseControl extends ShapeBase {
+export interface EllipseControl extends LegacyShapeBase {
   type: "ellipse";
   /** 호 / 활 모양 / 부채꼴 변종. */
   arcKind?: number;
@@ -644,7 +649,7 @@ export interface EllipseControl extends ShapeBase {
   arcEnd?: Point;
 }
 
-export interface ArcControl extends ShapeBase {
+export interface ArcControl extends LegacyShapeBase {
   type: "arc";
   arcKind: number;
   center: Point;
@@ -652,26 +657,26 @@ export interface ArcControl extends ShapeBase {
   axis2: Point;
 }
 
-export interface PolygonControl extends ShapeBase {
+export interface PolygonControl extends LegacyShapeBase {
   type: "polygon";
   points: Point[];
 }
 
-export interface CurveControl extends ShapeBase {
+export interface CurveControl extends LegacyShapeBase {
   type: "curve";
   points: Point[];
   /** 점마다 세그먼트 종류 바이트 하나: 직선 또는 곡선. */
   segmentTypes?: number[];
 }
 
-export interface ConnectLineControl extends ShapeBase {
+export interface ConnectLineControl extends LegacyShapeBase {
   type: "connectLine";
   start: Point;
   end: Point;
   connectKind: number;
 }
 
-export interface TextArtControl extends ShapeBase {
+export interface TextArtControl extends LegacyShapeBase {
   type: "textArt";
   text: string;
   fontName: string;
@@ -682,7 +687,7 @@ export interface TextArtControl extends ShapeBase {
   align?: number;
 }
 
-export interface OleControl extends ShapeBase {
+export interface OleControl extends LegacyShapeBase {
   type: "ole";
   binDataId: number;
   /** 알 수 있을 때의 OLE 개체 클래스 / prog id. */
@@ -690,7 +695,7 @@ export interface OleControl extends ShapeBase {
   extent?: { width: HwpUnit; height: HwpUnit };
 }
 
-export interface ContainerControl extends ShapeBase {
+export interface ContainerControl extends LegacyShapeBase {
   type: "container";
   children: DrawingControl[];
 }

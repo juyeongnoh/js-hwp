@@ -24,7 +24,7 @@ import {
   type RawChildRecord,
   type ShapeComponent,
   type ShapeLine,
-  type ShapeRectangle,
+  type RectangleControl,
   type ShapeMatrix,
   type UnknownControl,
   FieldKind,
@@ -1363,19 +1363,24 @@ function readDrawingObject(
     };
   // 사각형 레코드는 SHAPE_COMPONENT의 마지막 자식이고 뒤에 다른 레코드가 없을 때만 모델로 읽는다.
   // 쓸 때 childRecords 뒤에 붙이므로 순서가 같아야 한다.
-  const shapeChildren = [...shapeNode!.children];
+  const shapeChildren = shapeNode!.children;
   const last = shapeChildren[shapeChildren.length - 1];
-  if (
+  const rectangle =
     shapeComponent.shapeId === "$rec" &&
     rest.length === 1 &&
     last?.tagId === SectionTag.ShapeComponentRectangle &&
     last.children.length === 0
-  ) {
-    const rectangle = readShapeRectangle(last.payload);
-    if (rectangle) {
-      shapeComponent.rectangle = rectangle;
-      shapeChildren.pop();
-    }
+      ? readShapeRectangle(last.payload)
+      : undefined;
+  if (rectangle) {
+    const { shapeId: _, ...shape } = shapeComponent;
+    return {
+      type: "rectangle",
+      placement,
+      ...shape,
+      ...rectangle,
+      ...rawChildRecords(node, shapeChildren.slice(0, -1)),
+    };
   }
   return {
     type: "unknown",
@@ -1386,8 +1391,16 @@ function readDrawingObject(
   };
 }
 
+/** SHAPE_COMPONENT_RECTANGLE(표 94)이 담는 {@link RectangleControl} 필드. */
+type ShapeRectangle = Pick<
+  RectangleControl,
+  "cornerCurvature" | "points" | "rectangleTrailing"
+>;
+
 /** 사각형 개체 속성(표 94): 곡률 BYTE, (x, y) INT32 쌍 4개(정정 93). 33바이트보다 짧으면 읽지 않는다. */
-export function readShapeRectangle(payload: Uint8Array): ShapeRectangle | undefined {
+export function readShapeRectangle(
+  payload: Uint8Array,
+): ShapeRectangle | undefined {
   if (payload.length < 33) return undefined;
   const r = new ByteReader(payload);
   const cornerCurvature = r.uint8();
@@ -1396,16 +1409,18 @@ export function readShapeRectangle(payload: Uint8Array): ShapeRectangle | undefi
     cornerCurvature,
     points: [point(), point(), point(), point()],
   };
-  if (r.hasMore()) rectangle.trailing = r.rest();
+  if (r.hasMore()) rectangle.rectangleTrailing = r.rest();
   return rectangle;
 }
 
 export function writeShapeRectangle(rectangle: ShapeRectangle): ByteWriter {
   if (rectangle.points.length !== 4)
-    throw new RangeError(`사각형 꼭짓점은 4개여야 한다: ${rectangle.points.length}개`);
+    throw new RangeError(
+      `사각형 꼭짓점은 4개여야 한다: ${rectangle.points.length}개`,
+    );
   const w = new ByteWriter().uint8(rectangle.cornerCurvature);
   for (const p of rectangle.points) w.int32(p.x).int32(p.y);
-  if (rectangle.trailing) w.bytes(rectangle.trailing);
+  if (rectangle.rectangleTrailing) w.bytes(rectangle.rectangleTrailing);
   return w;
 }
 
@@ -1574,14 +1589,26 @@ function readShapeFill(r: ByteReader, payload: Uint8Array): Fill | undefined {
 /** `value`가 `width`비트 필드에 담기는지 검사한다. `setBits`는 넘치는 비트를 조용히 버린다. */
 function checkBitField(value: number, width: number, name: string): number {
   if (!Number.isInteger(value) || value < 0 || value >= 2 ** width)
-    throw new RangeError(`${name} ${value}는 ${width}비트(0~${2 ** width - 1})에 담을 수 없다.`);
+    throw new RangeError(
+      `${name} ${value}는 ${width}비트(0~${2 ** width - 1})에 담을 수 없다.`,
+    );
   return value;
 }
 
 function writeShapeLine(w: ByteWriter, line: ShapeLine): void {
   let properties = 0;
-  properties = setBits(properties, 0, 5, checkBitField(line.style, 6, "선 종류"));
-  properties = setBits(properties, 6, 9, checkBitField(line.endCap, 4, "선 끝 모양"));
+  properties = setBits(
+    properties,
+    0,
+    5,
+    checkBitField(line.style, 6, "선 종류"),
+  );
+  properties = setBits(
+    properties,
+    6,
+    9,
+    checkBitField(line.endCap, 4, "선 끝 모양"),
+  );
   properties = setBits(
     properties,
     10,
@@ -1656,8 +1683,7 @@ export function writeShapeComponent(shape: ShapeComponent): ByteWriter {
     const { shadow, instanceId } = shape;
     if (!shadow || instanceId === undefined)
       throw new RangeError("그림자와 인스턴스 ID는 함께 있어야 한다.");
-    if (!shape.fill)
-      throw new RangeError("그림자는 채우기 뒤에만 쓸 수 있다.");
+    if (!shape.fill) throw new RangeError("그림자는 채우기 뒤에만 쓸 수 있다.");
     w.uint32(shadow.kind)
       .color(shadow.color)
       .int32(shadow.offsetX)
@@ -2282,6 +2308,9 @@ function writeControl(
     case "picture":
       writePicture(writer, doc, control);
       return;
+    case "rectangle":
+      writeRectangle(writer, doc, control);
+      return;
     case "autoNumber": {
       let props = (control.unknownBits ?? 0) & ~AUTO_NUMBER_KNOWN;
       props = setBits(props, 0, 3, control.numberKind);
@@ -2659,13 +2688,44 @@ function writeUnknownControl(
       );
     for (const r of control.childRecords ?? [])
       writer.writeAt(r.depth, r.tagId, r.payload);
-    // 사각형 레코드는 SHAPE_COMPONENT의 마지막 자식이다.
-    if (control.shapeComponent?.rectangle)
-      writer.writeAt(
-        1,
-        SectionTag.ShapeComponentRectangle,
-        writeShapeRectangle(control.shapeComponent.rectangle).finish(),
-      );
+  });
+}
+
+/**
+ * 사각형: CTRL_HEADER, 캡션, SHAPE_COMPONENT(`$rec`), 미해석 자식(글상자), 그리고 SHAPE_COMPONENT의
+ * 마지막 자식인 사각형 레코드 순서로 쓴다.
+ */
+function writeRectangle(
+  writer: RecordWriter,
+  doc: HwpDocument,
+  rectangle: RectangleControl,
+): void {
+  const {
+    type: _,
+    placement,
+    childRecords,
+    cornerCurvature,
+    points,
+    rectangleTrailing,
+    ...shape
+  } = rectangle;
+  const header = new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject));
+  writeObjectPlacement(header, placement, 0, placement.caption !== undefined);
+  writer.nested(SectionTag.CtrlHeader, header, () => {
+    // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
+    if (placement.caption)
+      writeCaption(writer, doc, placement.caption, placement.width);
+    writer.write(
+      SectionTag.ShapeComponent,
+      writeShapeComponent({ shapeId: "$rec", ...shape }),
+    );
+    for (const r of childRecords ?? [])
+      writer.writeAt(r.depth, r.tagId, r.payload);
+    writer.writeAt(
+      1,
+      SectionTag.ShapeComponentRectangle,
+      writeShapeRectangle({ cornerCurvature, points, rectangleTrailing }).finish(),
+    );
   });
 }
 
