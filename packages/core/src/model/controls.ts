@@ -618,10 +618,27 @@ export interface PictureControl extends LegacyShapeBase {
   originalSize?: { width: HwpUnit; height: HwpUnit };
 }
 
-export interface LineControl extends LegacyShapeBase {
+/**
+ * 선(`$lin`). 도형별 레코드 SHAPE_COMPONENT_LINE(표 92)을 펼친 것이다. 명세는 18바이트지만 한글은
+ * 20바이트를 쓴다(정정 95, `experiments/shape-line`).
+ */
+export interface LineControl extends ShapeBase {
   type: "line";
+  /**
+   * 시작점과 끝점(개체 좌표계). 한글은 마우스를 누른 곳을 시작점으로 쓴다. 처음 그릴 때 가로·세로선이면
+   * (0, 0), (100, 100)이고 실제 길이는 SHAPE_COMPONENT의 현재 폭·높이와 scale matrix에 담긴다.
+   */
   start: Point;
   end: Point;
+  /**
+   * 속성(UINT16) bit 0. HWPX `isReverseHV`. 가로선을 오른쪽에서 왼쪽으로, 세로선을 아래에서 위로
+   * 그리면 켜진다. 처음 그릴 때 가로·세로선은 방향이 늘 오른쪽(위쪽)으로 잡히므로 이것으로 바로잡는다.
+   */
+  reverseHV?: boolean;
+  /** 속성에서 bit 0 밖의 비트. */
+  lineUnknownBits?: number;
+  /** 속성 뒤의 바이트. 한글은 0 2바이트를 쓴다. 없으면 그것을 쓴다. */
+  lineTrailing?: Uint8Array;
 }
 
 /**

@@ -12,13 +12,16 @@ import {
   type Fill,
   type ShapeComponent,
   type RectangleControl,
+  type LineControl,
   type ShapeLine,
 } from "@js-hwp/core";
 import CFB from "cfb";
 import { describe, expect, it } from "vitest";
 import {
+  readLineShape,
   readShapeComponent,
   readShapeRectangle,
+  writeLineShape,
   writeShapeComponent,
   writeShapeRectangle,
 } from "../src/bodytext.js";
@@ -907,5 +910,64 @@ describe("글상자 (정정 91, experiments/object-overlap-lock, 한글 2024)", 
     expect(header.split(":")[1]).toBe(
       "010000002000000037021b011b011b015e5a0000" + "00".repeat(13),
     );
+  });
+});
+
+describe("선 (정정 95, experiments/shape-line, 한글 macOS)", () => {
+  const path = "docs/experiments/shape-line/directions.hwp";
+  const bytes = () => new Uint8Array(readFileSync(join(root, path)));
+  const section = (file: Uint8Array): string => {
+    const c = CFB.read(file, { type: "buffer" });
+    const compressed =
+      ((CFB.find(c, "FileHeader")!.content as Uint8Array)[36]! & 1) === 1;
+    return hex(
+      maybeInflate(
+        new Uint8Array(
+          CFB.find(c, "/BodyText/Section0")!.content as Uint8Array,
+        ),
+        compressed,
+      ),
+    );
+  };
+  const lines = (doc: ReturnType<typeof parseHwp>) =>
+    doc.sections[0]!.paragraphs.flatMap((p) =>
+      p.runs.flatMap((r) => r.items),
+    ) as LineControl[];
+
+  it("그린 순서대로 시작점·끝점과 reverseHV를 읽는다", () => {
+    const got = lines(parseHwp(bytes())).map((l) => [
+      l.type,
+      l.start,
+      l.end,
+      l.reverseHV ?? false,
+      [...l.lineTrailing!],
+    ]);
+    const box = [
+      { x: 0, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    expect(got).toEqual([
+      ["line", { x: 0, y: 0 }, { x: 14298, y: 7149 }, false, [0, 0]], // 왼쪽 위 → 오른쪽 아래
+      ["line", { x: 14298, y: 0 }, { x: 0, y: 7149 }, false, [0, 0]], // 오른쪽 위 → 왼쪽 아래
+      ["line", ...box, true, [0, 0]], // 가로, 오른쪽 → 왼쪽
+      ["line", ...box, true, [0, 0]], // 세로, 아래 → 위
+      ["line", ...box, false, [0, 0]], // 가로, 왼쪽 → 오른쪽
+      ["line", { x: 0, y: 7149 }, { x: 14298, y: 0 }, false, [0, 0]], // 왼쪽 아래 → 오른쪽 위
+      ["line", ...box, false, [0, 0]], // 세로, 위 → 아래
+    ]);
+  });
+
+  it("구역 스트림을 원본과 같은 바이트로 다시 쓴다", () => {
+    expect(section(serializeHwp(parseHwp(bytes())))).toBe(section(bytes()));
+  });
+
+  it("짧은 18바이트 레코드는 18바이트로, 새 선은 한글처럼 20바이트로 쓴다", () => {
+    const short = readLineShape(new Uint8Array(18))!;
+    expect(writeLineShape(short).finish()).toHaveLength(18);
+    const { lineTrailing: _, ...fresh } = short;
+    expect([...writeLineShape({ ...fresh, reverseHV: true }).finish()]).toEqual(
+      [...new Array(16).fill(0), 1, 0, 0, 0],
+    );
+    expect(readLineShape(new Uint8Array(17))).toBeUndefined();
   });
 });

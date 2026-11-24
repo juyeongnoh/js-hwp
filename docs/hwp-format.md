@@ -532,6 +532,17 @@ CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
 
 코덱은 사각형 레코드가 SHAPE_COMPONENT의 마지막 자식이고 CTRL_HEADER 아래에 그 뒤 레코드가 없을 때만 `RectangleControl`로 읽는다. 그렇지 않거나 33B보다 짧으면 개체 전체를 `unknown`으로 두고 사각형 레코드를 `childRecords`에 원본 그대로 둔다. 33B 뒤의 바이트는 `rectangleTrailing`으로 보존한다. 글상자는 `textBox`로, 그 밖의 앞 자식은 `childRecords`에 원본 그대로 둔다.
 
+**선 개체 속성(SHAPE_COMPONENT_LINE, 20B).** SHAPE_COMPONENT `$lin`의 마지막 자식이다. 코덱은 `readLineShape`/`writeLineShape`, 모델은 `LineControl`의 `start`, `end`, `reverseHV`, `lineUnknownBits`, `lineTrailing`이다(정정 95, E44, `experiments/shape-line`).
+
+| 오프셋 | 자료형 | 설명 |
+| --- | --- | --- |
+| 0 | INT32 ×2 | 시작점 (x, y). 마우스를 누른 곳 (`start`) |
+| 8 | INT32 ×2 | 끝점 (x, y) (`end`). 처음 그릴 때 가로·세로선이면 시작점·끝점이 (0, 0), (100, 100)이고 실제 길이는 SHAPE_COMPONENT의 현재 폭·높이와 scale matrix에 있다 |
+| 16 | UINT16 | 속성. bit 0은 HWPX `isReverseHV`: 가로선을 오른쪽→왼쪽, 세로선을 아래→위로 그리면 1 (`reverseHV`). 나머지 비트는 `lineUnknownBits` |
+| 18 | **BYTE ×2** | **명세에 없음.** 한글은 0을 쓴다 (`lineTrailing`) |
+
+코덱은 사각형과 같은 조건(도형별 레코드가 SHAPE_COMPONENT의 마지막 자식이고 CTRL_HEADER 아래에 그 뒤 레코드가 없음)에서 18B 이상일 때 `LineControl`로 읽는다. 18B 레코드는 18B로 다시 쓰고, 새로 만든 선은 20B로 쓴다.
+
 코덱은 앞에서부터 해석할 수 있는 데까지만 모델로 읽는다. ID가 두 번 오지 않거나, 행렬보다 짧거나, 행렬 원소가 유한하지 않으면 SHAPE_COMPONENT 전체를 `childRecords`에 원본 그대로 둔다. 채우기는 읽은 값을 다시 써서 원본과 같을 때만 `fill`로 두고, 채우기나 그림자를 읽지 못하면 그 뒤 바이트를 `trailing`에 남긴다.
 
 ### 구역 정의 (`secd`)

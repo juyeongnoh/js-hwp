@@ -26,6 +26,7 @@ import {
   type ShapeLine,
   type ShapeTextBox,
   type RectangleControl,
+  type LineControl,
   type ShapeMatrix,
   type UnknownControl,
   FieldKind,
@@ -1362,28 +1363,29 @@ function readDrawingObject(
       placement,
       ...rawChildRecords(node, rest),
     };
-  // 사각형 레코드는 SHAPE_COMPONENT의 마지막 자식이고 뒤에 다른 레코드가 없을 때만 모델로 읽는다.
-  // 쓸 때 childRecords 뒤에 붙이므로 순서가 같아야 한다.
+  // 도형별 레코드는 SHAPE_COMPONENT의 마지막 자식이고 뒤에 다른 레코드가 없을 때만 모델로 읽는다.
+  // 쓸 때 글상자·childRecords 뒤에 붙이므로 순서가 같아야 한다.
   const shapeChildren = shapeNode!.children;
   const last = shapeChildren[shapeChildren.length - 1];
-  const rectangle =
-    shapeComponent.shapeId === "$rec" &&
+  const kind = SHAPE_KINDS[shapeComponent.shapeId];
+  const specific =
+    kind &&
     rest.length === 1 &&
-    last?.tagId === SectionTag.ShapeComponentRectangle &&
+    last?.tagId === kind.tag &&
     last.children.length === 0
-      ? readShapeRectangle(last.payload)
+      ? kind.read(last.payload)
       : undefined;
-  if (rectangle) {
+  if (kind && specific) {
     const { shapeId: _, ...shape } = shapeComponent;
     const middle = shapeChildren.slice(0, -1);
     const textBox = readTextBox(middle, context);
     return {
-      type: "rectangle",
+      type: kind.type,
       placement,
       ...shape,
       ...(textBox ? { textBox } : rawChildRecords(node, middle)),
-      ...rectangle,
-    };
+      ...specific,
+    } as Control;
   }
   return {
     type: "unknown",
@@ -1455,6 +1457,65 @@ function writeTextBox(
       maxWidth,
     ),
   );
+}
+
+/** 모델로 읽는 도형: 개체 ID → 컨트롤 타입, 도형별 레코드 태그, 그 레코드를 읽는 함수. */
+const SHAPE_KINDS: Record<
+  string,
+  {
+    type: "rectangle" | "line";
+    tag: number;
+    read: (payload: Uint8Array) => object | undefined;
+  }
+> = {
+  $rec: {
+    type: "rectangle",
+    tag: SectionTag.ShapeComponentRectangle,
+    read: readShapeRectangle,
+  },
+  $lin: {
+    type: "line",
+    tag: SectionTag.ShapeComponentLine,
+    read: readLineShape,
+  },
+};
+
+/** SHAPE_COMPONENT_LINE(표 92)이 담는 {@link LineControl} 필드. */
+type LineShape = Pick<
+  LineControl,
+  "start" | "end" | "reverseHV" | "lineUnknownBits" | "lineTrailing"
+>;
+
+/**
+ * 선 개체 속성(표 92): 시작점·끝점 INT32 ×4, 속성 UINT16(bit 0 `reverseHV`). 한글은 그 뒤에 0 2바이트를
+ * 더 써 20바이트다(정정 95). 18바이트보다 짧으면 읽지 않는다. 짧은 원본에 덧붙이지 않도록 끝 바이트는
+ * 비어 있어도 둔다.
+ */
+export function readLineShape(payload: Uint8Array): LineShape | undefined {
+  if (payload.length < 18) return undefined;
+  const r = new ByteReader(payload);
+  const start = { x: r.int32(), y: r.int32() };
+  const end = { x: r.int32(), y: r.int32() };
+  const attributes = r.uint16();
+  const line: LineShape = { start, end, lineTrailing: r.rest().slice() };
+  if (attributes & 1) line.reverseHV = true;
+  if (attributes & ~1) line.lineUnknownBits = attributes & ~1;
+  return line;
+}
+
+export function writeLineShape(line: LineShape): ByteWriter {
+  const unknown = checkBitField(
+    line.lineUnknownBits ?? 0,
+    16,
+    "lineUnknownBits",
+  );
+  return new ByteWriter()
+    .int32(line.start.x)
+    .int32(line.start.y)
+    .int32(line.end.x)
+    .int32(line.end.y)
+    .uint16((unknown & ~1) | (line.reverseHV ? 1 : 0))
+    .bytes(line.lineTrailing ?? new Uint8Array(2));
 }
 
 /** SHAPE_COMPONENT_RECTANGLE(표 94)이 담는 {@link RectangleControl} 필드. */
@@ -2375,7 +2436,24 @@ function writeControl(
       writePicture(writer, doc, control);
       return;
     case "rectangle":
-      writeRectangle(writer, doc, control);
+      writeShape(
+        writer,
+        doc,
+        control,
+        "$rec",
+        SectionTag.ShapeComponentRectangle,
+        writeShapeRectangle(control),
+      );
+      return;
+    case "line":
+      writeShape(
+        writer,
+        doc,
+        control,
+        "$lin",
+        SectionTag.ShapeComponentLine,
+        writeLineShape(control),
+      );
       return;
     case "autoNumber": {
       let props = (control.unknownBits ?? 0) & ~AUTO_NUMBER_KNOWN;
@@ -2758,24 +2836,18 @@ function writeUnknownControl(
 }
 
 /**
- * 사각형: CTRL_HEADER, 캡션, SHAPE_COMPONENT(`$rec`), 글상자, 미해석 자식, 그리고 SHAPE_COMPONENT의
- * 마지막 자식인 사각형 레코드 순서로 쓴다.
+ * 모델로 읽은 도형: CTRL_HEADER, 캡션, SHAPE_COMPONENT, 글상자, 미해석 자식, 그리고 SHAPE_COMPONENT의
+ * 마지막 자식인 도형별 레코드(`specific`) 순서로 쓴다.
  */
-function writeRectangle(
+function writeShape(
   writer: RecordWriter,
   doc: HwpDocument,
-  rectangle: RectangleControl,
+  control: RectangleControl | LineControl,
+  shapeId: string,
+  tag: number,
+  specific: ByteWriter,
 ): void {
-  const {
-    type: _,
-    placement,
-    textBox,
-    childRecords,
-    cornerCurvature,
-    points,
-    rectangleTrailing,
-    ...shape
-  } = rectangle;
+  const { type: _, placement, textBox, childRecords, ...shape } = control;
   const header = new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject));
   writeObjectPlacement(header, placement, 0, placement.caption !== undefined);
   writer.nested(SectionTag.CtrlHeader, header, () => {
@@ -2784,20 +2856,12 @@ function writeRectangle(
       writeCaption(writer, doc, placement.caption, placement.width);
     writer.write(
       SectionTag.ShapeComponent,
-      writeShapeComponent({ shapeId: "$rec", ...shape }),
+      writeShapeComponent({ shapeId, ...shape }),
     );
     if (textBox) writer.descend(() => writeTextBox(writer, doc, textBox));
     for (const r of childRecords ?? [])
       writer.writeAt(r.depth, r.tagId, r.payload);
-    writer.writeAt(
-      1,
-      SectionTag.ShapeComponentRectangle,
-      writeShapeRectangle({
-        cornerCurvature,
-        points,
-        rectangleTrailing,
-      }).finish(),
-    );
+    writer.writeAt(1, tag, specific.finish());
   });
 }
 
