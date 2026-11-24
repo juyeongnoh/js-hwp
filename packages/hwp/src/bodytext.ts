@@ -27,6 +27,12 @@ import {
   type ShapeTextBox,
   type RectangleControl,
   type LineControl,
+  type EllipseControl,
+  type ArcControl,
+  type PolygonControl,
+  type CurveControl,
+  type ShapeBase,
+  type Point,
   type ShapeMatrix,
   type UnknownControl,
   FieldKind,
@@ -1463,7 +1469,7 @@ function writeTextBox(
 const SHAPE_KINDS: Record<
   string,
   {
-    type: "rectangle" | "line";
+    type: ModeledShape["type"];
     tag: number;
     read: (payload: Uint8Array) => object | undefined;
   }
@@ -1478,7 +1484,181 @@ const SHAPE_KINDS: Record<
     tag: SectionTag.ShapeComponentLine,
     read: readLineShape,
   },
+  $ell: {
+    type: "ellipse",
+    tag: SectionTag.ShapeComponentEllipse,
+    read: readEllipseShape,
+  },
+  $arc: { type: "arc", tag: SectionTag.ShapeComponentArc, read: readArcShape },
+  $pol: {
+    type: "polygon",
+    tag: SectionTag.ShapeComponentPolygon,
+    read: readPolygonShape,
+  },
+  $cur: {
+    type: "curve",
+    tag: SectionTag.ShapeComponentCurve,
+    read: readCurveShape,
+  },
 };
+
+/** 모델로 읽고 쓰는 도형 컨트롤. */
+type ModeledShape =
+  | RectangleControl
+  | LineControl
+  | EllipseControl
+  | ArcControl
+  | PolygonControl
+  | CurveControl;
+
+const readPoint = (r: ByteReader): Point => ({ x: r.int32(), y: r.int32() });
+const writePoint = (w: ByteWriter, p: Point): ByteWriter =>
+  w.int32(p.x).int32(p.y);
+
+/** 도형별 필드: 컨트롤에서 ShapeBase와 type을 뺀 것. */
+type Specific<T extends ModeledShape> = Omit<T, keyof ShapeBase | "type">;
+
+/** 타원 속성(표 97)에서 아는 비트: bit 1 호로 바뀌었는지, bit 8~15 호 종류(정정 99). */
+const ELLIPSE_KNOWN = 0xff02;
+
+/**
+ * 타원 개체 속성(표 96, 60바이트): 속성 UINT32, 중심·제1축·제2축, start1·end1·start2·end2 (x, y)
+ * INT32 쌍. 배치는 명세와 같고(E45), 속성의 호 종류만 bit 8~15다(정정 99). 60바이트보다 짧으면 읽지 않는다.
+ */
+export function readEllipseShape(
+  payload: Uint8Array,
+): Specific<EllipseControl> | undefined {
+  if (payload.length < 60) return undefined;
+  const r = new ByteReader(payload);
+  const attributes = r.uint32();
+  const ellipse: Specific<EllipseControl> = {
+    center: readPoint(r),
+    axis1: readPoint(r),
+    axis2: readPoint(r),
+    start1: readPoint(r),
+    end1: readPoint(r),
+    start2: readPoint(r),
+    end2: readPoint(r),
+  };
+  if (bit(attributes, 1)) ellipse.hasArcProperty = true;
+  if (bits(attributes, 8, 15)) ellipse.arcKind = bits(attributes, 8, 15);
+  const unknown = (attributes & ~ELLIPSE_KNOWN) >>> 0;
+  if (unknown) ellipse.ellipseUnknownBits = unknown;
+  if (r.hasMore()) ellipse.ellipseTrailing = r.rest().slice();
+  return ellipse;
+}
+
+export function writeEllipseShape(e: Specific<EllipseControl>): ByteWriter {
+  let attributes = (e.ellipseUnknownBits ?? 0) & ~ELLIPSE_KNOWN;
+  attributes = setBit(attributes, 1, e.hasArcProperty);
+  attributes = setBits(
+    attributes,
+    8,
+    15,
+    checkBitField(e.arcKind ?? 0, 8, "arcKind"),
+  );
+  const w = new ByteWriter().uint32(attributes >>> 0);
+  for (const p of [
+    e.center,
+    e.axis1,
+    e.axis2,
+    e.start1,
+    e.end1,
+    e.start2,
+    e.end2,
+  ])
+    writePoint(w, p);
+  if (e.ellipseTrailing) w.bytes(e.ellipseTrailing);
+  return w;
+}
+
+/**
+ * 호 개체 속성(표 101): 호 종류 BYTE, 중심·제1축·제2축 (x, y) INT32 쌍. 명세는 속성 UINT32에 28바이트지만
+ * 한글은 25바이트를 쓴다(정정 96). 25바이트보다 짧으면 읽지 않는다.
+ */
+export function readArcShape(
+  payload: Uint8Array,
+): Specific<ArcControl> | undefined {
+  if (payload.length < 25) return undefined;
+  const r = new ByteReader(payload);
+  const arc: Specific<ArcControl> = {
+    arcKind: r.uint8(),
+    center: readPoint(r),
+    axis1: readPoint(r),
+    axis2: readPoint(r),
+  };
+  if (r.hasMore()) arc.arcTrailing = r.rest().slice();
+  return arc;
+}
+
+export function writeArcShape(a: Specific<ArcControl>): ByteWriter {
+  const w = new ByteWriter().uint8(a.arcKind);
+  for (const p of [a.center, a.axis1, a.axis2]) writePoint(w, p);
+  if (a.arcTrailing) w.bytes(a.arcTrailing);
+  return w;
+}
+
+/**
+ * 점 수 UINT32와 (x, y) INT32 쌍들. 다각형·곡선 레코드의 앞부분이다. 명세는 점 수 INT16, x 배열 다음
+ * y 배열이지만 한글은 이렇게 쓴다(정정 97, 98). 점이 레코드보다 많으면 읽지 않는다.
+ */
+function readPointList(
+  r: ByteReader,
+  payload: Uint8Array,
+): Point[] | undefined {
+  if (payload.length < 4) return undefined;
+  const count = r.uint32();
+  if (count > (payload.length - 4) / 8) return undefined;
+  return Array.from({ length: count }, () => readPoint(r));
+}
+
+function writePointList(w: ByteWriter, points: Point[]): ByteWriter {
+  w.uint32(points.length);
+  for (const p of points) writePoint(w, p);
+  return w;
+}
+
+/** 다각형 개체 속성(표 99, 정정 97). 짧은 원본에 덧붙이지 않도록 끝 바이트는 비어 있어도 둔다. */
+export function readPolygonShape(
+  payload: Uint8Array,
+): Specific<PolygonControl> | undefined {
+  const r = new ByteReader(payload);
+  const points = readPointList(r, payload);
+  return points && { points, polygonTrailing: r.rest().slice() };
+}
+
+export function writePolygonShape(p: Specific<PolygonControl>): ByteWriter {
+  return writePointList(new ByteWriter(), p.points).bytes(
+    p.polygonTrailing ?? new Uint8Array(4),
+  );
+}
+
+/**
+ * 곡선 개체 속성(표 103, 정정 98): 점 목록, 구간 종류 BYTE (점 수 − 1)개, 나머지. 점이 없거나 구간 종류가
+ * 레코드보다 길면 읽지 않는다.
+ */
+export function readCurveShape(
+  payload: Uint8Array,
+): Specific<CurveControl> | undefined {
+  const r = new ByteReader(payload);
+  const points = readPointList(r, payload);
+  if (!points?.length || (points.length > 1 && !r.hasMore(points.length - 1)))
+    return undefined;
+  const segmentTypes = Array.from({ length: points.length - 1 }, () =>
+    r.uint8(),
+  );
+  return { points, segmentTypes, curveTrailing: r.rest().slice() };
+}
+
+export function writeCurveShape(c: Specific<CurveControl>): ByteWriter {
+  if (c.segmentTypes.length !== c.points.length - 1)
+    throw new RangeError(
+      `곡선 구간 종류는 점 수 − 1개여야 한다: 점 ${c.points.length}개, 구간 ${c.segmentTypes.length}개`,
+    );
+  const w = writePointList(new ByteWriter(), c.points);
+  for (const t of c.segmentTypes) w.uint8(t);
+  return w.bytes(c.curveTrailing ?? new Uint8Array(4));
+}
 
 /** SHAPE_COMPONENT_LINE(표 92)이 담는 {@link LineControl} 필드. */
 type LineShape = Pick<
@@ -2455,6 +2635,46 @@ function writeControl(
         writeLineShape(control),
       );
       return;
+    case "ellipse":
+      writeShape(
+        writer,
+        doc,
+        control,
+        "$ell",
+        SectionTag.ShapeComponentEllipse,
+        writeEllipseShape(control),
+      );
+      return;
+    case "arc":
+      writeShape(
+        writer,
+        doc,
+        control,
+        "$arc",
+        SectionTag.ShapeComponentArc,
+        writeArcShape(control),
+      );
+      return;
+    case "polygon":
+      writeShape(
+        writer,
+        doc,
+        control,
+        "$pol",
+        SectionTag.ShapeComponentPolygon,
+        writePolygonShape(control),
+      );
+      return;
+    case "curve":
+      writeShape(
+        writer,
+        doc,
+        control,
+        "$cur",
+        SectionTag.ShapeComponentCurve,
+        writeCurveShape(control),
+      );
+      return;
     case "autoNumber": {
       let props = (control.unknownBits ?? 0) & ~AUTO_NUMBER_KNOWN;
       props = setBits(props, 0, 3, control.numberKind);
@@ -2842,7 +3062,7 @@ function writeUnknownControl(
 function writeShape(
   writer: RecordWriter,
   doc: HwpDocument,
-  control: RectangleControl | LineControl,
+  control: ModeledShape,
   shapeId: string,
   tag: number,
   specific: ByteWriter,

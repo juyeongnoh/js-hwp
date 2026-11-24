@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  ArcKind,
   ArrowSize,
   ArrowStyle,
   HatchStyle,
@@ -13,15 +14,25 @@ import {
   type ShapeComponent,
   type RectangleControl,
   type LineControl,
+  type EllipseControl,
+  type ArcControl,
+  type PolygonControl,
+  type CurveControl,
   type ShapeLine,
 } from "@js-hwp/core";
 import CFB from "cfb";
 import { describe, expect, it } from "vitest";
 import {
+  readArcShape,
+  readCurveShape,
+  readEllipseShape,
   readLineShape,
+  readPolygonShape,
   readShapeComponent,
   readShapeRectangle,
+  writeCurveShape,
   writeLineShape,
+  writePolygonShape,
   writeShapeComponent,
   writeShapeRectangle,
 } from "../src/bodytext.js";
@@ -969,5 +980,206 @@ describe("선 (정정 95, experiments/shape-line, 한글 macOS)", () => {
       [...new Array(16).fill(0), 1, 0, 0, 0],
     );
     expect(readLineShape(new Uint8Array(17))).toBeUndefined();
+  });
+});
+
+describe("타원·호·다각형·곡선 (정정 96~98, E45, 한글 macOS)", () => {
+  const path = "docs/experiments/shape-ellipse-arc-polygon-curve/shapes.hwp";
+  const bytes = () => new Uint8Array(readFileSync(join(root, path)));
+  const items = () =>
+    parseHwp(bytes()).sections[0]!.paragraphs.flatMap((p) =>
+      p.runs.flatMap((r) => r.items),
+    );
+  const sectionHex = (file: Uint8Array): string => {
+    const c = CFB.read(file, { type: "buffer" });
+    const compressed =
+      ((CFB.find(c, "FileHeader")!.content as Uint8Array)[36]! & 1) === 1;
+    return hex(
+      maybeInflate(
+        new Uint8Array(
+          CFB.find(c, "/BodyText/Section0")!.content as Uint8Array,
+        ),
+        compressed,
+      ),
+    );
+  };
+
+  it("HWPX와 같은 점을 읽는다", () => {
+    const [ellipse, arc, open, closed, curve] = items() as [
+      EllipseControl,
+      ArcControl,
+      PolygonControl,
+      PolygonControl,
+      CurveControl,
+    ];
+    expect(ellipse).toMatchObject({
+      type: "ellipse",
+      center: { x: 7149, y: 4289 },
+      axis1: { x: 14298, y: 4289 },
+      axis2: { x: 7149, y: 0 },
+      start1: { x: 0, y: 0 },
+      end2: { x: 0, y: 0 },
+    });
+    expect(ellipse.arcKind).toBeUndefined();
+    expect(arc).toMatchObject({
+      type: "arc",
+      arcKind: 0,
+      center: { x: 0, y: 0 },
+      axis1: { x: 0, y: 8578 },
+      axis2: { x: 14298, y: 0 },
+    });
+    expect(open.points).toEqual([
+      { x: 0, y: 2144 },
+      { x: 14298, y: 0 },
+      { x: 16443, y: 10008 },
+      { x: 3575, y: 12868 },
+    ]);
+    expect([...open.polygonTrailing!]).toEqual([0, 0, 0, 0]);
+    // 닫힌 다각형은 첫 점을 끝에 한 번 더 쓰고 끝 4바이트가 1이다.
+    expect(closed.points.at(-1)).toEqual(closed.points[0]);
+    expect([...closed.polygonTrailing!]).toEqual([1, 0, 0, 0]);
+    expect(curve.points).toEqual([
+      { x: 0, y: 1659 },
+      { x: 7149, y: 229 },
+      { x: 12868, y: 5948 },
+      { x: 20017, y: 3089 },
+    ]);
+    expect(curve.segmentTypes).toEqual([1, 1, 1]);
+    expect([...curve.curveTrailing!]).toEqual([0, 0, 0, 0]);
+  });
+
+  it("구역 스트림을 원본과 같은 바이트로 다시 쓴다", () => {
+    expect(sectionHex(serializeHwp(parseHwp(bytes())))).toBe(
+      sectionHex(bytes()),
+    );
+  });
+
+  it("짧거나 점 수가 레코드보다 크면 읽지 않는다", () => {
+    expect(readEllipseShape(new Uint8Array(59))).toBeUndefined();
+    expect(readArcShape(new Uint8Array(24))).toBeUndefined();
+    expect(
+      readPolygonShape(Uint8Array.of(2, 0, 0, 0, ...new Array(8).fill(0))),
+    ).toBeUndefined();
+    expect(readCurveShape(Uint8Array.of(0, 0, 0, 0))).toBeUndefined();
+    // 점 2개에 구간 종류 1바이트가 없다.
+    expect(
+      readCurveShape(Uint8Array.of(2, 0, 0, 0, ...new Array(16).fill(0))),
+    ).toBeUndefined();
+  });
+
+  it("새로 만든 다각형·곡선은 한글처럼 끝에 0 4바이트를 쓴다", () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+    ];
+    expect(writePolygonShape({ points }).finish()).toHaveLength(4 + 16 + 4);
+    expect(
+      writeCurveShape({ points, segmentTypes: [0] }).finish(),
+    ).toHaveLength(4 + 16 + 1 + 4);
+    expect(() => writeCurveShape({ points, segmentTypes: [] })).toThrow(
+      RangeError,
+    );
+  });
+});
+
+describe("호 종류 (정정 96, E46, 한글 macOS)", () => {
+  const dir = "docs/experiments/shape-ellipse-arc-polygon-curve";
+  it.each([
+    ["shapes", ArcKind.Arc],
+    ["arc-pie", ArcKind.Pie],
+    ["arc-chord", ArcKind.Chord],
+  ])("%s의 호 종류는 %i이다", (file, kind) => {
+    const arc = load(`${dir}/${file}.hwp`)
+      .sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items))
+      .find((i): i is ArcControl => i.type === "arc")!;
+    expect(arc.arcKind).toBe(kind);
+  });
+});
+
+describe("호로 바꾼 타원 (정정 99, E47, Windows 한글 2024)", () => {
+  const dir = "docs/experiments/shape-ellipse-arc-polygon-curve";
+  const ellipseOf = (file: string) =>
+    load(`${dir}/${file}.hwp`)
+      .sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items))
+      .find((i): i is EllipseControl => i.type === "ellipse")!;
+
+  it.each([
+    ["ellipse-edit-pie", ArcKind.Pie, 0x10000],
+    ["ellipse-edit-arc", undefined, undefined],
+    ["ellipse-edit-chord", ArcKind.Chord, undefined],
+  ])("%s: bit 1과 bit 8~15 호 종류", (file, kind, unknown) => {
+    const e = ellipseOf(file);
+    expect(e.hasArcProperty).toBe(true);
+    expect(e.arcKind).toBe(kind);
+    expect(e.ellipseUnknownBits).toBe(unknown);
+    // HWPX hp:ellipse와 같은 점
+    expect([e.center, e.axis1, e.axis2, e.start1, e.end1]).toEqual([
+      { x: 12368, y: 7420 },
+      { x: 24736, y: 7420 },
+      { x: 12368, y: 0 },
+      { x: 24736, y: 7421 },
+      { x: 12368, y: 0 },
+    ]);
+  });
+
+  it("구역 스트림을 원본과 같은 바이트로 다시 쓴다", () => {
+    const section = (file: Uint8Array): string => {
+      const c = CFB.read(file, { type: "buffer" });
+      const compressed =
+        ((CFB.find(c, "FileHeader")!.content as Uint8Array)[36]! & 1) === 1;
+      return hex(
+        maybeInflate(
+          new Uint8Array(
+            CFB.find(c, "/BodyText/Section0")!.content as Uint8Array,
+          ),
+          compressed,
+        ),
+      );
+    };
+    for (const f of [
+      "ellipse-edit-pie",
+      "ellipse-edit-arc",
+      "ellipse-edit-chord",
+    ]) {
+      const bytes = new Uint8Array(readFileSync(join(root, `${dir}/${f}.hwp`)));
+      expect(section(serializeHwp(parseHwp(bytes)))).toBe(section(bytes));
+    }
+  });
+});
+
+describe("다각형 편집으로 만든 호의 점과 bit 16 (E48, Windows 한글 2024)", () => {
+  const dir = "docs/experiments/shape-ellipse-arc-polygon-curve";
+  const ellipses = (file: string) =>
+    load(`${dir}/${file}.hwp`)
+      .sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items))
+      .filter((i): i is EllipseControl => i.type === "ellipse");
+
+  it("start1은 편집점을 놓은 곳, end1은 편집점의 처음 자리(위)다", () => {
+    expect(
+      ellipses("ellipse-edit-angles").map((e) => [e.start1, e.end1]),
+    ).toEqual([
+      [
+        { x: 24736, y: 7421 },
+        { x: 12368, y: 0 },
+      ], // 오른쪽 끝으로 끎: 1/4
+      [
+        { x: 12368, y: 14842 },
+        { x: 12368, y: 0 },
+      ], // 아래 끝으로 끎: 1/2
+      [
+        { x: 0, y: 7421 },
+        { x: 12368, y: 0 },
+      ], // 왼쪽 끝으로 끎: 3/4
+    ]);
+  });
+
+  it("bit 16은 편집 직후 켜지고 개체 속성 설정을 누르면 꺼진다", () => {
+    expect(
+      ellipses("ellipse-edit-angles").map((e) => e.ellipseUnknownBits),
+    ).toEqual([0x10000, 0x10000, 0x10000]);
+    // 첫 타원만 개체 속성에서 설정을 눌렀다.
+    expect(
+      ellipses("ellipse-edit-angles-dialog").map((e) => e.ellipseUnknownBits),
+    ).toEqual([undefined, 0x10000, 0x10000]);
   });
 });

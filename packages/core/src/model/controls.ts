@@ -660,32 +660,106 @@ export interface RectangleControl extends ShapeBase {
   rectangleTrailing?: Uint8Array;
 }
 
-export interface EllipseControl extends LegacyShapeBase {
+/**
+ * 호의 종류. 호 레코드(표 101)의 첫 BYTE이고 HWPX `hp:arc type`의 순서와 같다. 한글 개체 속성 › 선 ›
+ * "호 테두리"의 세 버튼이 0~2를 만든다(정정 96, E46, `experiments/shape-ellipse-arc-polygon-curve`).
+ */
+export enum ArcKind {
+  /** 호. HWPX `NORMAL`. */
+  Arc = 0,
+  /** 부채꼴. HWPX `PIE`. */
+  Pie = 1,
+  /** 활 모양. HWPX `CHORD`. */
+  Chord = 2,
+}
+
+/**
+ * 타원(`$ell`). 도형별 레코드 SHAPE_COMPONENT_ELLIPSE(표 96, 60바이트)를 펼친 것이다. 한글이 쓰는 배치가
+ * 명세와 같다(E45, `experiments/shape-ellipse-arc-polygon-curve`). 점 이름은 HWPX `hp:ellipse`를 따른다.
+ */
+export interface EllipseControl extends ShapeBase {
   type: "ellipse";
-  /** 호 / 활 모양 / 부채꼴 변종. */
-  arcKind?: number;
-  arcStart?: Point;
-  arcEnd?: Point;
-}
-
-export interface ArcControl extends LegacyShapeBase {
-  type: "arc";
-  arcKind: number;
+  /**
+   * 속성(표 97) bit 1. 호로 바뀌었는지. HWPX `hasArcPr`. 한글은 다각형 편집으로 타원의 편집점을 끌면
+   * 켠다(E47).
+   */
+  hasArcProperty?: boolean;
+  /**
+   * 속성 bit 8~15. 호의 종류. HWPX `arcType`. 명세는 bit 2~9라고 적었지만 한글은 두 번째 바이트에
+   * 호 레코드와 같은 {@link ArcKind} 값을 쓴다(정정 99). 없으면 0(`NORMAL`).
+   */
+  arcKind?: ArcKind;
+  /**
+   * 속성에서 bit 1, 8~15 밖의 비트. 한글은 다각형 편집으로 편집점을 끌면 bit 16을 켜고, 개체 속성에서
+   * "설정"을 누르면 끈다. HWPX에는 대응하는 속성이 없다(E48). 명세의 bit 0(HWPX `intervalDirty`)이
+   * 켜진 파일은 보지 못했다.
+   */
+  ellipseUnknownBits?: number;
+  /** 중심(개체 좌표계). 한글이 새로 그린 타원은 (폭/2, 높이/2)다. */
   center: Point;
+  /** 제1축. 새로 그린 타원은 오른쪽 끝 (폭, 높이/2)다. */
   axis1: Point;
+  /** 제2축. 새로 그린 타원은 위쪽 끝 (폭/2, 0)이다. */
   axis2: Point;
+  /**
+   * 호의 시작점(명세 start pos). 다각형 편집으로 편집점을 놓은 곳이다. 호는 화면에서 {@link end1}부터
+   * 시계 방향으로 이 점까지 그려진다(E48). 호가 아니면 0이다.
+   */
+  start1: Point;
+  /** 호의 끝점(명세 end pos). 편집점의 처음 자리인 위쪽 끝 (폭/2, 0)이었다. 호가 아니면 0이다. */
+  end1: Point;
+  /**
+   * 명세 start pos 2, end pos 2(`start2.x`는 명세상 "interval of curve"). 한글은 start1, end1과 같거나
+   * 1 다른 값을 썼다. 뜻은 확인하지 않았다.
+   */
+  start2: Point;
+  end2: Point;
+  /** 60바이트 뒤의 바이트. 지금까지 본 파일에는 없다. */
+  ellipseTrailing?: Uint8Array;
 }
 
-export interface PolygonControl extends LegacyShapeBase {
+/**
+ * 호(`$arc`). 도형별 레코드 SHAPE_COMPONENT_ARC(표 101)를 펼친 것이다. 명세는 속성 UINT32에 28바이트지만
+ * 한글은 호 종류 BYTE에 25바이트를 쓴다(정정 96).
+ */
+export interface ArcControl extends ShapeBase {
+  type: "arc";
+  /** 호 종류 BYTE(명세는 속성 UINT32). 한글은 0~2만 만든다. 파일의 다른 값은 그대로 보존한다. */
+  arcKind: ArcKind;
+  /** 타원의 중심. 한글이 새로 그린 호는 (0, 0)이다. */
+  center: Point;
+  /** 제1축. 새로 그린 호는 (0, 높이)다. */
+  axis1: Point;
+  /** 제2축. 새로 그린 호는 (폭, 0)이다. */
+  axis2: Point;
+  /** 25바이트 뒤의 바이트. 지금까지 본 파일에는 없다. */
+  arcTrailing?: Uint8Array;
+}
+
+/**
+ * 다각형(`$pol`). 도형별 레코드 SHAPE_COMPONENT_POLYGON(표 99)을 펼친 것이다. 명세와 달리 점 수가
+ * 4바이트, 점이 (x, y) 쌍이고 끝에 4바이트가 더 있다(정정 97).
+ */
+export interface PolygonControl extends ShapeBase {
   type: "polygon";
+  /** 꼭짓점(개체 좌표계). 한글은 닫힌 다각형의 첫 점을 끝에 한 번 더 쓴다. */
   points: Point[];
+  /** 점 뒤의 바이트. 한글은 열린 다각형에 `00 00 00 00`, 닫힌 다각형에 `01 00 00 00`을 썼다. 없으면 0 4바이트. */
+  polygonTrailing?: Uint8Array;
 }
 
-export interface CurveControl extends LegacyShapeBase {
+/**
+ * 곡선(`$cur`). 도형별 레코드 SHAPE_COMPONENT_CURVE(표 103)를 펼친 것이다. 명세와 달리 점 수가
+ * 4바이트, 점이 (x, y) 쌍이고 끝에 4바이트가 더 있다(정정 98).
+ */
+export interface CurveControl extends ShapeBase {
   type: "curve";
+  /** 점(개체 좌표계). 구간 i는 점 i와 점 i+1을 잇는다. HWPX `hp:seg`의 `x1, y1, x2, y2`. */
   points: Point[];
-  /** 점마다 세그먼트 종류 바이트 하나: 직선 또는 곡선. */
-  segmentTypes?: number[];
+  /** 구간마다 종류 BYTE 하나(점 수 − 1개): 0 직선, 1 곡선. HWPX `hp:seg type`. */
+  segmentTypes: number[];
+  /** 구간 종류 뒤의 바이트. 한글은 0 4바이트를 썼다. 없으면 그것을 쓴다. */
+  curveTrailing?: Uint8Array;
 }
 
 export interface ConnectLineControl extends LegacyShapeBase {

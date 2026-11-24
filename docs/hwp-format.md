@@ -543,6 +543,39 @@ CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
 
 코덱은 사각형과 같은 조건(도형별 레코드가 SHAPE_COMPONENT의 마지막 자식이고 CTRL_HEADER 아래에 그 뒤 레코드가 없음)에서 18B 이상일 때 `LineControl`로 읽는다. 18B 레코드는 18B로 다시 쓰고, 새로 만든 선은 20B로 쓴다.
 
+**타원·호·다각형·곡선 개체 속성.** 모두 SHAPE_COMPONENT의 마지막 자식이고 사각형·선과 같은 조건에서 모델로 읽는다(E45, `experiments/shape-ellipse-arc-polygon-curve`). 점은 모두 개체 좌표계의 (x, y) INT32 쌍이다.
+
+| 도형 | 레코드 | 배치 | 모델 |
+| --- | --- | --- | --- |
+| 타원 `$ell` | SHAPE_COMPONENT_ELLIPSE 60B | 속성 UINT32(bit 1 `hasArcProperty`, **bit 8~15** `arcKind`. **명세는 bit 2~9**, 정정 99), 중심, 제1축, 제2축, start1, end1, start2, end2. 배치는 명세와 같다 | `EllipseControl` |
+| 호 `$arc` | SHAPE_COMPONENT_ARC **25B** | 호 종류 **BYTE**(0 호, 1 부채꼴, 2 활 모양 = HWPX `NORMAL`, `PIE`, `CHORD`), 중심, 제1축, 제2축. **명세는 속성 UINT32, 28B**(정정 96, E46) | `ArcControl`, `ArcKind` |
+| 다각형 `$pol` | SHAPE_COMPONENT_POLYGON | 점 수 **4B**, (x, y) 쌍, **명세에 없는 4B**(열림 0, 닫힘 1). **명세는 점 수 INT16, x 배열 다음 y 배열**(정정 97) | `PolygonControl` |
+| 곡선 `$cur` | SHAPE_COMPONENT_CURVE | 점 수 **4B**, (x, y) 쌍, 구간 종류 BYTE ×(점 수 − 1)(0 직선, 1 곡선), **명세에 없는 0 4B**(정정 98) | `CurveControl` |
+
+**타원 개체 속성(SHAPE_COMPONENT_ELLIPSE, 60B).** 괄호는 HWPX `hp:ellipse`와 `EllipseControl` 필드다(E45, E47, E48).
+
+| 오프셋 | 자료형 | 설명 |
+| --- | --- | --- |
+| 0 | UINT32 | 속성. 아래 표 |
+| 4 | INT32 ×2 | 중심. 새 타원은 (폭/2, 높이/2) (`center`, `center`) |
+| 12 | INT32 ×2 | 제1축. 새 타원은 오른쪽 끝 (폭, 높이/2) (`ax1`, `axis1`) |
+| 20 | INT32 ×2 | 제2축. 새 타원은 위쪽 끝 (폭/2, 0) (`ax2`, `axis2`) |
+| 28 | INT32 ×2 | 호의 시작점. 다각형 편집으로 편집점을 놓은 곳 (`start1`, `start1`) |
+| 36 | INT32 ×2 | 호의 끝점. 편집점의 처음 자리인 위쪽 끝 (`end1`, `end1`) |
+| 44 | INT32 ×2 | 명세 start pos 2("interval of curve"). start1과 같거나 1 다르다. **뜻 모름** (`start2`, `start2`) |
+| 52 | INT32 ×2 | 명세 end pos 2. end1과 같았다. **뜻 모름** (`end2`, `end2`) |
+
+호가 아닌 타원은 오프셋 28부터 0이다. 호는 화면에서 end1부터 시계 방향으로 start1까지 그려진다.
+
+| 비트 | 설명 |
+| --- | --- |
+| 0 | 명세: 호로 바뀌었을 때 interval을 다시 계산해야 하는지(HWPX `intervalDirty`). 켜진 파일을 보지 못했다 (`ellipseUnknownBits`) |
+| 1 | 호로 바뀌었는지. 다각형 편집으로 편집점을 끌면 켜진다 (`hasArcPr`, `hasArcProperty`) |
+| **8~15** | 호의 종류: 0 호, 1 부채꼴, 2 활 모양. **명세는 bit 2~9**(정정 99) (`arcType`, `arcKind`) |
+| **16** | **명세에 없음.** 다각형 편집으로 편집점을 끌면 켜지고, 개체 속성에서 "설정"을 누르면 꺼진다. HWPX에는 나타나지 않는다(E48) (`ellipseUnknownBits`) |
+
+짧은 레코드나 점 수가 레코드보다 큰 레코드는 읽지 않고 개체 전체를 `unknown`으로 둔다. 다각형·곡선의 끝 바이트는 비어 있어도 보존하고, 새로 만든 개체에는 0 4바이트를 쓴다.
+
 코덱은 앞에서부터 해석할 수 있는 데까지만 모델로 읽는다. ID가 두 번 오지 않거나, 행렬보다 짧거나, 행렬 원소가 유한하지 않으면 SHAPE_COMPONENT 전체를 `childRecords`에 원본 그대로 둔다. 채우기는 읽은 값을 다시 써서 원본과 같을 때만 `fill`로 두고, 채우기나 그림자를 읽지 못하면 그 뒤 바이트를 `trailing`에 남긴다.
 
 ### 구역 정의 (`secd`)
