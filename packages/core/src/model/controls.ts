@@ -479,11 +479,15 @@ export interface ShapeComponent {
   flipHorizontal?: boolean;
   flipVertical?: boolean;
   /**
-   * 속성에서 bit 0, 1을 뺀 비트. 명세에 없지만 한글은 bit 19, 24, 26, 29를 쓴다. 뜻은
-   * 모르고, 쓸 때 OR로 합친다.
+   * 속성에서 bit 0, 1을 뺀 비트. 명세에 없지만 한글은 bit 19, 24, 26, 29를 쓴다. bit 24는 글상자가
+   * 있으면 켜진다(저장소 그리기 개체 148개에서 예외 없음, 정정 101). 나머지는 뜻을 모르고, 쓸 때 OR로
+   * 합친다.
    */
   unknownBits?: number;
-  /** 회전각(HWPUNIT16). 단위는 확인하지 않았다. 저장소 파일은 모두 0이다. */
+  /**
+   * 회전각, 도 단위 정수. 대화상자 회전각 30°가 30으로 저장되고 HWPX `rotationInfo angle`과 같다(정정 101).
+   * 회전하면 rotation matrix가 (cos, −sin, tx, sin, cos, ty)가 되고 회전 중심도 바뀐다.
+   */
   rotation: number;
   /** 회전 중심(개체 좌표계). 한글은 폭·높이의 절반을 쓴다. */
   rotationCenter: Point;
@@ -742,9 +746,15 @@ export interface ArcControl extends ShapeBase {
  */
 export interface PolygonControl extends ShapeBase {
   type: "polygon";
-  /** 꼭짓점(개체 좌표계). 한글은 닫힌 다각형의 첫 점을 끝에 한 번 더 쓴다. */
+  /**
+   * 꼭짓점(개체 좌표계). 닫힌 다각형은 마지막 점이 첫 점과 같다. 닫힘을 나타내는 필드는 따로 없고, 한글의
+   * "열린 다각형 닫기"는 첫 점을 끝에 더하고 "닫힌 다각형 열기"는 마지막 점을 옮긴다(E49).
+   */
   points: Point[];
-  /** 점 뒤의 바이트. 한글은 열린 다각형에 `00 00 00 00`, 닫힌 다각형에 `01 00 00 00`을 썼다. 없으면 0 4바이트. */
+  /**
+   * 점 뒤의 4바이트. 닫힘 여부가 아니다. 한글은 첫 점을 다시 눌러 닫으며 그린 다각형에만 `01 00 00 00`을
+   * 쓰고, 그 뒤 열어도 그대로 둔다. 그 밖에는 0이었다. 뜻은 모른다. 없으면 0 4바이트.
+   */
   polygonTrailing?: Uint8Array;
 }
 
@@ -754,11 +764,14 @@ export interface PolygonControl extends ShapeBase {
  */
 export interface CurveControl extends ShapeBase {
   type: "curve";
-  /** 점(개체 좌표계). 구간 i는 점 i와 점 i+1을 잇는다. HWPX `hp:seg`의 `x1, y1, x2, y2`. */
+  /**
+   * 점(개체 좌표계). 구간 i는 점 i와 점 i+1을 잇는다. HWPX `hp:seg`의 `x1, y1, x2, y2`. 닫힌 곡선은 마지막
+   * 점이 첫 점과 같다(E49).
+   */
   points: Point[];
   /** 구간마다 종류 BYTE 하나(점 수 − 1개): 0 직선, 1 곡선. HWPX `hp:seg type`. */
   segmentTypes: number[];
-  /** 구간 종류 뒤의 바이트. 한글은 0 4바이트를 썼다. 없으면 그것을 쓴다. */
+  /** 구간 종류 뒤의 4바이트. 한글은 열린 곡선과 닫힌 곡선 모두 0을 썼다. 뜻은 모른다. 없으면 0 4바이트. */
   curveTrailing?: Uint8Array;
 }
 

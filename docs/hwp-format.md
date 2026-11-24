@@ -465,7 +465,7 @@ PARA_HEADER (0)
 
 ### 그리기 개체 (`gso `, SHAPE_COMPONENT)
 
-그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 사각형은 `RectangleControl`로 읽고 SHAPE_COMPONENT와 사각형 레코드의 필드를 컨트롤에 펼친다(`ShapeBase`). 그 밖의 개체는 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
+그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 사각형·선·타원·호·다각형·곡선은 각각의 컨트롤(`RectangleControl` 등)로 읽고 SHAPE_COMPONENT와 도형별 레코드의 필드를 컨트롤에 펼친다(`ShapeBase`). 그 밖의 개체(그림, 묶음, OLE 등)는 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
 
 ```
 CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
@@ -487,8 +487,8 @@ CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
 | 18 | WORD | local file version. 한글 2024는 1 (`localVersion`) |
 | 20 | UINT32 ×2 | 처음 폭·높이 (`initialWidth`, `initialHeight`) |
 | 28 | UINT32 ×2 | 현재 폭·높이 (`width`, `height`) |
-| 36 | UINT32 | 속성: bit 0 수평 반전, bit 1 수직 반전. **한글은 명세에 없는 bit 19, 24, 26, 29도 쓴다. 뜻 모름** (`flipHorizontal`, `flipVertical`, `unknownBits`) |
-| 40 | HWPUNIT16 | 회전각. 단위 미확인 (`rotation`) |
+| 36 | UINT32 | 속성: bit 0 수평 반전(좌우 대칭), bit 1 수직 반전. **한글은 명세에 없는 bit 19, 24, 26, 29도 쓴다. bit 24는 글상자가 있으면 켜진다. 나머지는 뜻 모름**(정정 101) (`flipHorizontal`, `flipVertical`, `unknownBits`) |
+| 40 | HWPUNIT16 | 회전각. **도 단위 정수.** 30° = 30, HWPX `rotationInfo angle`(정정 101, E50) (`rotation`) |
 | 42 | INT32 ×2 | 회전 중심. 한글은 폭·높이의 절반 (`rotationCenter`) |
 | 50 | WORD | scale/rotation 행렬 쌍 수 cnt. 쓸 때는 배열 길이 |
 | 52 | double ×6 | translation matrix (`translation`) |
@@ -549,8 +549,8 @@ CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
 | --- | --- | --- | --- |
 | 타원 `$ell` | SHAPE_COMPONENT_ELLIPSE 60B | 속성 UINT32(bit 1 `hasArcProperty`, **bit 8~15** `arcKind`. **명세는 bit 2~9**, 정정 99), 중심, 제1축, 제2축, start1, end1, start2, end2. 배치는 명세와 같다 | `EllipseControl` |
 | 호 `$arc` | SHAPE_COMPONENT_ARC **25B** | 호 종류 **BYTE**(0 호, 1 부채꼴, 2 활 모양 = HWPX `NORMAL`, `PIE`, `CHORD`), 중심, 제1축, 제2축. **명세는 속성 UINT32, 28B**(정정 96, E46) | `ArcControl`, `ArcKind` |
-| 다각형 `$pol` | SHAPE_COMPONENT_POLYGON | 점 수 **4B**, (x, y) 쌍, **명세에 없는 4B**(열림 0, 닫힘 1). **명세는 점 수 INT16, x 배열 다음 y 배열**(정정 97) | `PolygonControl` |
-| 곡선 `$cur` | SHAPE_COMPONENT_CURVE | 점 수 **4B**, (x, y) 쌍, 구간 종류 BYTE ×(점 수 − 1)(0 직선, 1 곡선), **명세에 없는 0 4B**(정정 98) | `CurveControl` |
+| 다각형 `$pol` | SHAPE_COMPONENT_POLYGON | 점 수 **4B**, (x, y) 쌍, **명세에 없는 4B**(닫힘 여부가 아니다. 첫 점을 다시 눌러 닫으며 그린 다각형만 1). 닫힌 다각형은 마지막 점이 첫 점과 같다. **명세는 점 수 INT16, x 배열 다음 y 배열**(정정 97, E49) | `PolygonControl` |
+| 곡선 `$cur` | SHAPE_COMPONENT_CURVE | 점 수 **4B**, (x, y) 쌍, 구간 종류 BYTE ×(점 수 − 1)(0 직선, 1 곡선), **명세에 없는 0 4B**. 닫힌 곡선은 마지막 점이 첫 점과 같다(정정 98, E49) | `CurveControl` |
 
 **타원 개체 속성(SHAPE_COMPONENT_ELLIPSE, 60B).** 괄호는 HWPX `hp:ellipse`와 `EllipseControl` 필드다(E45, E47, E48).
 

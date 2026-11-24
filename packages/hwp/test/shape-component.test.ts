@@ -1183,3 +1183,95 @@ describe("다각형 편집으로 만든 호의 점과 bit 16 (E48, Windows 한�
     ).toEqual([undefined, 0x10000, 0x10000]);
   });
 });
+
+describe("다각형·곡선 닫기와 끝 4바이트 (E49, Windows 한글 2024)", () => {
+  const dir = "docs/experiments/shape-ellipse-arc-polygon-curve";
+  const shapes = (file: string) =>
+    load(`${dir}/${file}.hwp`)
+      .sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items))
+      .filter(
+        (i): i is PolygonControl | CurveControl =>
+          i.type === "polygon" || i.type === "curve",
+      );
+  const summary = (file: string) =>
+    shapes(file).map((s) => [
+      s.type,
+      s.points.length,
+      s.points.at(-1)!.x === s.points[0]!.x &&
+        s.points.at(-1)!.y === s.points[0]!.y,
+      (s.type === "polygon" ? s.polygonTrailing : s.curveTrailing)![0],
+    ]);
+
+  it.each([
+    "polygon-curve-drawn",
+    "polygon-curve-toggled",
+    "polygon-pen",
+    "polygon-curve-textbox-caption-rotate",
+  ])("%s의 구역 스트림을 원본과 같은 바이트로 다시 쓴다", (f) => {
+    const section = (file: Uint8Array): string => {
+      const c = CFB.read(file, { type: "buffer" });
+      const compressed =
+        ((CFB.find(c, "FileHeader")!.content as Uint8Array)[36]! & 1) === 1;
+      return hex(
+        maybeInflate(
+          new Uint8Array(
+            CFB.find(c, "/BodyText/Section0")!.content as Uint8Array,
+          ),
+          compressed,
+        ),
+      );
+    };
+    const bytes = new Uint8Array(readFileSync(join(root, `${dir}/${f}.hwp`)));
+    expect(section(serializeHwp(parseHwp(bytes)))).toBe(section(bytes));
+  });
+
+  it("그린 직후: 첫 점을 다시 눌러 닫은 다각형만 끝 바이트가 1이다", () => {
+    expect(summary("polygon-curve-drawn")).toEqual([
+      ["polygon", 4, false, 0], // P1 열림
+      ["polygon", 4, false, 0], // P2 열림
+      ["polygon", 4, true, 1], // P3 첫 점을 눌러 닫음
+      ["curve", 4, false, 0], // C1
+      ["curve", 4, false, 0], // C2
+    ]);
+  });
+
+  it("닫기는 첫 점을 끝에 더하고, 열기는 마지막 점을 옮긴다. 끝 바이트는 그대로다", () => {
+    expect(summary("polygon-curve-toggled")).toEqual([
+      ["polygon", 4, false, 0], // P1
+      ["curve", 4, false, 0], // C1
+      ["polygon", 5, true, 0], // P2 닫음
+      ["polygon", 4, false, 1], // P3 엶
+      ["curve", 5, true, 0], // C2 닫음
+    ]);
+  });
+});
+
+describe("글상자·캡션·회전·대칭이 있는 다각형·곡선 (E50, Windows 한글 2024)", () => {
+  it("모두 모델로 읽고 원본 레코드가 남지 않는다", () => {
+    const items = load(
+      "docs/experiments/shape-ellipse-arc-polygon-curve/polygon-curve-textbox-caption-rotate.hwp",
+    )
+      .sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items))
+      .filter(
+        (i): i is PolygonControl | CurveControl =>
+          i.type === "polygon" || i.type === "curve",
+      );
+    expect(
+      items.map((i) => [
+        i.type,
+        i.textBox?.paragraphs.length,
+        !!i.placement.caption,
+        i.rotation,
+        i.flipHorizontal ?? false,
+        i.childRecords,
+      ]),
+    ).toEqual([
+      ["polygon", 1, false, 0, false, undefined], // 도형 안에 글자 넣기
+      ["curve", 1, false, 0, false, undefined],
+      ["polygon", undefined, true, 0, false, undefined], // 캡션
+      ["curve", undefined, true, 0, false, undefined],
+      ["polygon", undefined, false, 30, false, undefined], // 회전각 30°
+      ["curve", undefined, false, 0, true, undefined], // 좌우 대칭
+    ]);
+  });
+});
