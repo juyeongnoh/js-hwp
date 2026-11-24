@@ -479,9 +479,12 @@ export interface ShapeComponent {
   flipHorizontal?: boolean;
   flipVertical?: boolean;
   /**
-   * 속성에서 bit 0, 1을 뺀 비트. 명세에 없지만 한글은 bit 19, 24, 26, 29를 쓴다. bit 24는 글상자가
-   * 있으면 켜진다(저장소 그리기 개체 148개에서 예외 없음, 정정 101). 나머지는 뜻을 모르고, 쓸 때 OR로
-   * 합친다.
+   * 속성에서 bit 0, 1을 뺀 비트. 쓸 때 OR로 합친다. 명세에 없지만 한글은 다음을 쓴다(정정 101, E52).
+   * - bit 19: HWPX `rotationInfo rotateimage`. 한글이 만드는 개체는 모두 1. 꺼도 그림은 같았다.
+   * - bit 24: 글상자가 있으면 켜진다.
+   * - bit 25: 회전한 그림에서 켜진다.
+   * - bit 26: 그림이면 켜진다. 한글은 저장할 때 개체 종류로 다시 정한다.
+   * - bit 29: 그림이면 켜진다. HWPX에 대응 속성이 없고 뜻을 모른다.
    */
   unknownBits?: number;
   /**
@@ -489,9 +492,16 @@ export interface ShapeComponent {
    * 회전하면 rotation matrix가 (cos, −sin, tx, sin, cos, ty)가 되고 회전 중심도 바뀐다.
    */
   rotation: number;
-  /** 회전 중심(개체 좌표계). 한글은 폭·높이의 절반을 쓴다. */
+  /**
+   * 회전 중심. translation × rotation × scale로 옮긴 (처음 폭/2, 처음 높이/2)다(E52). 회전·크기 변경이
+   * 없으면 (⌊폭/2⌋, ⌊높이/2⌋)다.
+   */
   rotationCenter: Point;
-  /** Rendering 정보(표 84)의 translation matrix. */
+  /**
+   * Rendering 정보(표 84)의 translation matrix. 개체 좌표는 translation × rotation × scale로 옮겨지고,
+   * 그 결과는 (0, 0)부터 개체 공통 속성 폭·높이까지를 채운다. 한글은 회전한 꼭짓점이 음수가 되지 않게
+   * (1, 0, gx, 0, 1, gy)로 밀고, 같은 값을 group offset에 쓴다(E52).
+   */
   translation: ShapeMatrix;
   /** scale matrix와 rotation matrix 쌍. 묶을 때마다 하나씩 는다. 개수는 배열 길이로 쓴다. */
   scaleRotations: { scale: ShapeMatrix; rotation: ShapeMatrix }[];
@@ -695,8 +705,8 @@ export interface EllipseControl extends ShapeBase {
   arcKind?: ArcKind;
   /**
    * 속성에서 bit 1, 8~15 밖의 비트. 한글은 다각형 편집으로 편집점을 끌면 bit 16을 켜고, 개체 속성에서
-   * "설정"을 누르면 끈다. HWPX에는 대응하는 속성이 없다(E48). 명세의 bit 0(HWPX `intervalDirty`)이
-   * 켜진 파일은 보지 못했다.
+   * "설정"을 누르면 끈다. HWPX에는 대응하는 속성이 없고 꺼도 그림은 같았다(E48, E52). 명세의 bit 0(HWPX
+   * `intervalDirty`)은 한글이 저장할 때 start2·end2를 다시 계산하고 끈다(E52).
    */
   ellipseUnknownBits?: number;
   /** 중심(개체 좌표계). 한글이 새로 그린 타원은 (폭/2, 높이/2)다. */
@@ -713,8 +723,8 @@ export interface EllipseControl extends ShapeBase {
   /** 호의 끝점(명세 end pos). 편집점의 처음 자리인 위쪽 끝 (폭/2, 0)이었다. 호가 아니면 0이다. */
   end1: Point;
   /**
-   * 명세 start pos 2, end pos 2(`start2.x`는 명세상 "interval of curve"). 한글은 start1, end1과 같거나
-   * 1 다른 값을 썼다. 뜻은 확인하지 않았다.
+   * 명세 start pos 2, end pos 2. start1, end1을 중심에서 뻗은 반직선이 타원과 만나는 점으로 옮긴 값이다
+   * (정수로 반올림). 한글은 그릴 때 쓰지 않고, 저장할 때 다시 계산한다(정정 100, E52).
    */
   start2: Point;
   end2: Point;
@@ -753,7 +763,8 @@ export interface PolygonControl extends ShapeBase {
   points: Point[];
   /**
    * 점 뒤의 4바이트. 닫힘 여부가 아니다. 한글은 첫 점을 다시 눌러 닫으며 그린 다각형에만 `01 00 00 00`을
-   * 쓰고, 그 뒤 열어도 그대로 둔다. 그 밖에는 0이었다. 뜻은 모른다. 없으면 0 4바이트.
+   * 쓰고, 그 뒤 열어도 그대로 둔다. 그 밖에는 0이었다. 바꿔도 그림은 같았고 한글은 그대로 저장한다(E52).
+   * 뜻은 모른다. 없으면 0 4바이트.
    */
   polygonTrailing?: Uint8Array;
 }
@@ -771,7 +782,10 @@ export interface CurveControl extends ShapeBase {
   points: Point[];
   /** 구간마다 종류 BYTE 하나(점 수 − 1개): 0 직선, 1 곡선. HWPX `hp:seg type`. */
   segmentTypes: number[];
-  /** 구간 종류 뒤의 4바이트. 한글은 열린 곡선과 닫힌 곡선 모두 0을 썼다. 뜻은 모른다. 없으면 0 4바이트. */
+  /**
+   * 구간 종류 뒤의 4바이트. 한글은 열린 곡선과 닫힌 곡선 모두 0을 썼다. 1로 바꿔도 그림은 같았다(E52).
+   * 뜻은 모른다. 없으면 0 4바이트.
+   */
   curveTrailing?: Uint8Array;
 }
 

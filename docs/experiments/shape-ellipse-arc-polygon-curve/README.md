@@ -70,6 +70,6 @@ bit 1이 호로 바뀌었는지, 둘째 바이트(bit 8~15)가 호 종류다. �
 
 ## 확인하지 않은 것
 
-- 다각형 끝 4바이트의 뜻. 곡선 구간 종류 0(직선)을 만드는 조작.
-
-- 타원 속성 bit 0과 bit 16의 뜻. start2·end2가 start1·end1과 1 다른 이유.
+- 다각형 끝 4바이트의 뜻. 바꿔도 그림은 같았다(E52, `experiments/shape-unknown-bits`).
+- 곡선 구간 종류 0(직선)을 만드는 UI 조작. 파일에 넣은 0은 한글이 직선으로 그린다(`experiments/shape-model-edits`).
+- 타원 속성 bit 16의 뜻. bit 0과 start2·end2는 E52에서 확인했다.
