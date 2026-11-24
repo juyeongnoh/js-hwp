@@ -515,9 +515,34 @@ export interface ShapeComponent {
   /** 인스턴스 ID 뒤의 1바이트. 뜻을 모른다. 저장소 파일은 모두 0이다. 없으면 0으로 쓴다. */
   afterInstanceId?: number;
   /**
+   * 사각형(`$rec`)의 자식 레코드 SHAPE_COMPONENT_RECTANGLE(표 94). SHAPE_COMPONENT의 마지막 자식으로
+   * 글상자 뒤에 오고, 쓸 때도 그 자리에 쓴다. 해석할 수 없으면 두지 않고 `childRecords`에 남긴다.
+   */
+  rectangle?: ShapeRectangle;
+  /**
    * 그 뒤의 바이트. 지금까지 본 그리기 개체는 그림자 뒤에서 레코드가 끝났고, 그림은 Rendering 정보
    * 뒤가 비어 있다. 채우기나 그림자를 모델로 읽지 못하면 그 바이트가 여기에 원본 그대로 남는다.
    */
+  trailing?: Uint8Array;
+}
+
+/**
+ * 사각형 개체 속성(표 94). 33바이트: 모서리 곡률 BYTE, 꼭짓점 4개. 명세는 x 4개 다음 y 4개로 적었지만
+ * 실제는 (x, y) 쌍 4개다(정정 93, E42, `experiments/shape-rectangle`).
+ */
+export interface ShapeRectangle {
+  /**
+   * 모서리 곡률(%). 한글 2024 대화상자의 직각 0, 둥근 모양 20, 반원 50이고 "곡률 지정"은 0~50만
+   * 받는다. 짧은 변에 대한 비율이다.
+   */
+  cornerCurvature: number;
+  /**
+   * 꼭짓점 4개(개체 좌표계). 한글은 왼쪽 위부터 시계 방향으로 (0, 0), (폭, 0), (폭, 높이), (0, 높이)를
+   * 쓴다. 폭·높이는 개체를 만들 때의 크기(`initialWidth`, `initialHeight`)이고, 크기를 바꿔도
+   * 그대로다. 바뀐 크기는 SHAPE_COMPONENT의 현재 폭·높이와 scale matrix에 담긴다.
+   */
+  points: [Point, Point, Point, Point];
+  /** 33바이트 뒤의 바이트. 지금까지 본 파일에는 없다. 그대로 붙인다. */
   trailing?: Uint8Array;
 }
 

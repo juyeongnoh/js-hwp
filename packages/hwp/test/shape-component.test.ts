@@ -12,10 +12,16 @@ import {
   type Fill,
   type ShapeComponent,
   type ShapeLine,
+  type ShapeRectangle,
 } from '@js-hwp/core'
 import CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
-import { readShapeComponent, writeShapeComponent } from '../src/bodytext.js'
+import {
+  readShapeComponent,
+  readShapeRectangle,
+  writeShapeComponent,
+  writeShapeRectangle,
+} from '../src/bodytext.js'
 import { maybeInflate } from '../src/compress.js'
 import { parseHwp, serializeHwp } from '../src/document.js'
 import { buildRecordTree, parseRecords, type RecordNode } from '../src/record.js'
@@ -38,6 +44,23 @@ function shapeComponents(bytes: Uint8Array): string[] {
   const out: string[] = []
   const walk = (n: RecordNode): void => {
     if (n.tagId === SectionTag.ShapeComponent) out.push(hex(n.payload))
+    n.children.forEach(walk)
+  }
+  for (const p of c.FullPaths.filter((p) => /BodyText\/Section\d+$/.test(p))) {
+    const data = new Uint8Array(CFB.find(c, p.replace(/^[^/]*/, ''))!.content as Uint8Array)
+    buildRecordTree(parseRecords(maybeInflate(data, compressed))).forEach(walk)
+  }
+  return out
+}
+
+/** 모든 SHAPE_COMPONENT_RECTANGLE 페이로드(16진수)를 나온 순서대로. */
+function rectangles(bytes: Uint8Array): string[] {
+  const c = CFB.read(bytes, { type: 'buffer' })
+  const header = CFB.find(c, 'FileHeader')!.content as Uint8Array
+  const compressed = (header[36]! & 1) === 1
+  const out: string[] = []
+  const walk = (n: RecordNode): void => {
+    if (n.tagId === SectionTag.ShapeComponentRectangle) out.push(hex(n.payload))
     n.children.forEach(walk)
   }
   for (const p of c.FullPaths.filter((p) => /BodyText\/Section\d+$/.test(p))) {
@@ -145,10 +168,12 @@ describe('개체 요소 속성 값 (한글 2024)', () => {
     expect(shape.instanceId).toBe(0x0a8c5e98)
     expect(shape.afterInstanceId).toBeUndefined()
     expect(shape.trailing).toBeUndefined()
-    // SHAPE_COMPONENT는 childRecords에 없고, 그 자식(도형별 레코드)은 깊이 1로 남는다.
-    expect(rect!.childRecords?.map((r) => [r.tagId, r.depth])).toEqual([
-      [SectionTag.ShapeComponentRectangle, 1],
-    ])
+    // SHAPE_COMPONENT와 사각형 레코드를 모두 모델로 읽어 childRecords가 없다.
+    expect(rect!.childRecords).toBeUndefined()
+    expect(shape.rectangle).toEqual({
+      cornerCurvature: 0,
+      points: [{ x: 0, y: 0 }, { x: 19298, y: 0 }, { x: 19298, y: 13515 }, { x: 0, y: 13515 }],
+    })
   })
 
   it('그림: Rendering 정보에서 레코드가 끝난다', () => {
@@ -541,5 +566,63 @@ describe('채우기 투명도 (experiments/fill-alpha, 한글 2024)', () => {
     ['resaved-char-yellow-255', 4],
   ])('%s: DocInfo 테두리/배경의 투명도는 그리지 않지만 한글이 보존한다', (file, index) => {
     expect(load(`${dir}/${file}.hwp`).borderFills[index]!.fill!.color!.transparency).toBe(255)
+  })
+})
+
+describe('사각형 (experiments/shape-rectangle, 한글 2024)', () => {
+  const dir = 'docs/experiments/shape-rectangle'
+  const shapeOf = (file: string) => drawingObjects(load(`${dir}/${file}.hwp`))[0]!.shapeComponent!
+  const corners = [{ x: 0, y: 0 }, { x: 23134, y: 0 }, { x: 23134, y: 15403 }, { x: 0, y: 15403 }]
+
+  it.each([
+    ['base', 0],
+    ['corner-round', 20],
+    ['corner-half', 50],
+    ['corner-35', 35],
+  ])('%s의 모서리 곡률은 %i이고 꼭짓점은 (x, y) 쌍 네 개다', (file, curvature) => {
+    expect(shapeOf(file).rectangle).toEqual({ cornerCurvature: curvature, points: corners })
+  })
+
+  it('폭을 바꿔도 꼭짓점은 만들 때 크기 그대로이고 SHAPE_COMPONENT의 현재 폭과 scale matrix가 바뀐다', () => {
+    const shape = shapeOf('corner-35-width-100')
+    expect(shape.rectangle!.points).toEqual(corners)
+    expect([shape.initialWidth, shape.width]).toEqual([23134, 28345])
+    // 한글의 scale은 폭 비율과 소수 다섯째 자리에서 다르다(1.225296… 대 1.225253…).
+    expect(shape.scaleRotations[0]!.scale[0]).toBeCloseTo(28345 / 23134, 3)
+  })
+
+  it('고친 곡률만 바뀐다', () => {
+    const path = `${dir}/base.hwp`
+    const bytes = new Uint8Array(readFileSync(join(root, path)))
+    const doc = parseHwp(bytes)
+    drawingObjects(doc)[0]!.shapeComponent!.rectangle!.cornerCurvature = 35
+    const written = serializeHwp(doc)
+    // 한글이 곡률 35로 저장한 corner-35와 SHAPE_COMPONENT 하위 트리가 같다.
+    const expected = new Uint8Array(readFileSync(join(root, `${dir}/corner-35.hwp`)))
+    expect(rectangles(written)).toEqual(rectangles(expected))
+  })
+})
+
+describe('readShapeRectangle', () => {
+  const rect = (): ShapeRectangle => ({
+    cornerCurvature: 20,
+    points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }, { x: -1, y: 50 }],
+  })
+
+  it('쓴 레코드를 다시 읽으면 같다', () => {
+    const bytes = writeShapeRectangle(rect()).finish()
+    expect(bytes).toHaveLength(33)
+    expect(readShapeRectangle(bytes)).toEqual(rect())
+    const withTail = writeShapeRectangle({ ...rect(), trailing: Uint8Array.of(1, 2) }).finish()
+    expect([...readShapeRectangle(withTail)!.trailing!]).toEqual([1, 2])
+  })
+
+  it('33바이트보다 짧으면 읽지 않는다', () => {
+    expect(readShapeRectangle(writeShapeRectangle(rect()).finish().subarray(0, 32))).toBeUndefined()
+  })
+
+  it('범위를 넘는 값은 쓰지 않는다', () => {
+    expect(() => writeShapeRectangle({ ...rect(), cornerCurvature: 256 })).toThrow(RangeError)
+    expect(() => writeShapeRectangle({ ...rect(), points: rect().points.slice(0, 3) as never })).toThrow(RangeError)
   })
 })

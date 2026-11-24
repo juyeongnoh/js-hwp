@@ -24,6 +24,7 @@ import {
   type RawChildRecord,
   type ShapeComponent,
   type ShapeLine,
+  type ShapeRectangle,
   type ShapeMatrix,
   type UnknownControl,
   FieldKind,
@@ -1360,13 +1361,52 @@ function readDrawingObject(
       placement,
       ...rawChildRecords(node, rest),
     };
+  // 사각형 레코드는 SHAPE_COMPONENT의 마지막 자식이고 뒤에 다른 레코드가 없을 때만 모델로 읽는다.
+  // 쓸 때 childRecords 뒤에 붙이므로 순서가 같아야 한다.
+  const shapeChildren = [...shapeNode!.children];
+  const last = shapeChildren[shapeChildren.length - 1];
+  if (
+    shapeComponent.shapeId === "$rec" &&
+    rest.length === 1 &&
+    last?.tagId === SectionTag.ShapeComponentRectangle &&
+    last.children.length === 0
+  ) {
+    const rectangle = readShapeRectangle(last.payload);
+    if (rectangle) {
+      shapeComponent.rectangle = rectangle;
+      shapeChildren.pop();
+    }
+  }
   return {
     type: "unknown",
     ctrlId: CtrlId.DrawingObject,
     placement,
     shapeComponent,
-    ...rawChildRecords(node, [...shapeNode!.children, ...rest.slice(1)]),
+    ...rawChildRecords(node, [...shapeChildren, ...rest.slice(1)]),
   };
+}
+
+/** 사각형 개체 속성(표 94): 곡률 BYTE, (x, y) INT32 쌍 4개(정정 93). 33바이트보다 짧으면 읽지 않는다. */
+export function readShapeRectangle(payload: Uint8Array): ShapeRectangle | undefined {
+  if (payload.length < 33) return undefined;
+  const r = new ByteReader(payload);
+  const cornerCurvature = r.uint8();
+  const point = () => ({ x: r.int32(), y: r.int32() });
+  const rectangle: ShapeRectangle = {
+    cornerCurvature,
+    points: [point(), point(), point(), point()],
+  };
+  if (r.hasMore()) rectangle.trailing = r.rest();
+  return rectangle;
+}
+
+export function writeShapeRectangle(rectangle: ShapeRectangle): ByteWriter {
+  if (rectangle.points.length !== 4)
+    throw new RangeError(`사각형 꼭짓점은 4개여야 한다: ${rectangle.points.length}개`);
+  const w = new ByteWriter().uint8(rectangle.cornerCurvature);
+  for (const p of rectangle.points) w.int32(p.x).int32(p.y);
+  if (rectangle.trailing) w.bytes(rectangle.trailing);
+  return w;
 }
 
 /** 개체 요소 속성(표 83) bit 0 수평 반전, bit 1 수직 반전. */
@@ -2619,6 +2659,13 @@ function writeUnknownControl(
       );
     for (const r of control.childRecords ?? [])
       writer.writeAt(r.depth, r.tagId, r.payload);
+    // 사각형 레코드는 SHAPE_COMPONENT의 마지막 자식이다.
+    if (control.shapeComponent?.rectangle)
+      writer.writeAt(
+        1,
+        SectionTag.ShapeComponentRectangle,
+        writeShapeRectangle(control.shapeComponent.rectangle).finish(),
+      );
   });
 }
 
