@@ -28,10 +28,6 @@ bench/lib/fflate-native.mjs
 # Python bytecode from tools/spec-transcribe.
 __pycache__/
 
-# Claude Code
-CLAUDE.md
-.claude/
-
 # ─────────────────────────────────────────────────────────────────────────
 # 첫 저장소는 라이브러리 소스와 그것을 빌드·배포하는 데 필요한 것만 담는다.
 # 나머지는 로컬에 그대로 있고 추적만 하지 않는다. 필요해지는 순서대로 이
