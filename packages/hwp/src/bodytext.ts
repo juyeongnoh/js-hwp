@@ -24,6 +24,7 @@ import {
   type RawChildRecord,
   type ShapeComponent,
   type ShapeLine,
+  type ShapeTextBox,
   type RectangleControl,
   type ShapeMatrix,
   type UnknownControl,
@@ -1374,12 +1375,14 @@ function readDrawingObject(
       : undefined;
   if (rectangle) {
     const { shapeId: _, ...shape } = shapeComponent;
+    const middle = shapeChildren.slice(0, -1);
+    const textBox = readTextBox(middle, context);
     return {
       type: "rectangle",
       placement,
       ...shape,
+      ...(textBox ? { textBox } : rawChildRecords(node, middle)),
       ...rectangle,
-      ...rawChildRecords(node, shapeChildren.slice(0, -1)),
     };
   }
   return {
@@ -1389,6 +1392,69 @@ function readDrawingObject(
     shapeComponent,
     ...rawChildRecords(node, [...shapeChildren, ...rest.slice(1)]),
   };
+}
+
+/**
+ * 글상자: LIST_HEADER(문단 리스트 헤더 8B, 여백 HWPUNIT16 ×4, 최대 폭 HWPUNIT, 나머지)와 그 형제
+ * 문단(정정 91). 자식이 LIST_HEADER 하나와 문단뿐이고 헤더가 20B 이상일 때만 읽는다. 아니면 호출하는
+ * 쪽이 원본을 보존한다.
+ */
+function readTextBox(
+  children: RecordNode[],
+  context: ParseContext,
+): ShapeTextBox | undefined {
+  const [header, ...paragraphs] = children;
+  if (
+    header?.tagId !== SectionTag.ListHeader ||
+    header.payload.length < 20 ||
+    paragraphs.some((p) => p.tagId !== SectionTag.ParaHeader)
+  )
+    return undefined;
+  const { list, reader } = readListHeader(header.payload);
+  return {
+    ...list,
+    margins: {
+      left: reader.hwpUnit16(),
+      right: reader.hwpUnit16(),
+      top: reader.hwpUnit16(),
+      bottom: reader.hwpUnit16(),
+    },
+    maxWidth: reader.uint32(),
+    // 짧은 원본에 13B를 덧붙이지 않도록 빈 배열도 둔다.
+    textBoxTrailing: reader.rest().slice(),
+    paragraphs: paragraphs.map((p) => readParagraph(p, context)),
+  };
+}
+
+function writeTextBox(
+  writer: RecordWriter,
+  doc: HwpDocument,
+  textBox: ShapeTextBox,
+): void {
+  const { margins, maxWidth, paragraphs } = textBox;
+  const header = writeListHeader(
+    new ByteWriter(),
+    paragraphs.length,
+    // 한글이 새로 만든 글상자는 세로 정렬 가운데다(object-overlap-lock).
+    listPropertiesBits(textBox, VerticalAlign.Center),
+  )
+    .hwpUnit16(margins.left)
+    .hwpUnit16(margins.right)
+    .hwpUnit16(margins.top)
+    .hwpUnit16(margins.bottom)
+    .uint32(maxWidth)
+    .bytes(textBox.textBoxTrailing ?? new Uint8Array(13));
+  writer.write(SectionTag.ListHeader, header);
+  paragraphs.forEach((paragraph, index) =>
+    writeParagraph(
+      writer,
+      doc,
+      paragraph,
+      undefined,
+      index === paragraphs.length - 1,
+      maxWidth,
+    ),
+  );
 }
 
 /** SHAPE_COMPONENT_RECTANGLE(표 94)이 담는 {@link RectangleControl} 필드. */
@@ -2692,7 +2758,7 @@ function writeUnknownControl(
 }
 
 /**
- * 사각형: CTRL_HEADER, 캡션, SHAPE_COMPONENT(`$rec`), 미해석 자식(글상자), 그리고 SHAPE_COMPONENT의
+ * 사각형: CTRL_HEADER, 캡션, SHAPE_COMPONENT(`$rec`), 글상자, 미해석 자식, 그리고 SHAPE_COMPONENT의
  * 마지막 자식인 사각형 레코드 순서로 쓴다.
  */
 function writeRectangle(
@@ -2703,6 +2769,7 @@ function writeRectangle(
   const {
     type: _,
     placement,
+    textBox,
     childRecords,
     cornerCurvature,
     points,
@@ -2719,12 +2786,17 @@ function writeRectangle(
       SectionTag.ShapeComponent,
       writeShapeComponent({ shapeId: "$rec", ...shape }),
     );
+    if (textBox) writer.descend(() => writeTextBox(writer, doc, textBox));
     for (const r of childRecords ?? [])
       writer.writeAt(r.depth, r.tagId, r.payload);
     writer.writeAt(
       1,
       SectionTag.ShapeComponentRectangle,
-      writeShapeRectangle({ cornerCurvature, points, rectangleTrailing }).finish(),
+      writeShapeRectangle({
+        cornerCurvature,
+        points,
+        rectangleTrailing,
+      }).finish(),
     );
   });
 }

@@ -558,17 +558,18 @@ export interface ShapeShadow {
   transparency: number;
 }
 
-/** 그리기 개체 안에 그려지는 텍스트. */
-export interface ShapeTextBox {
-  paragraphs: Paragraph[];
+/**
+ * 글상자. SHAPE_COMPONENT의 첫 자식 LIST_HEADER(33B)와 그 형제 문단이다. 명세 표 89·90과 달리
+ * 공통 헤더 8B 뒤에 여백, 최대 폭, 명세에 없는 0 13B 순서다(정정 91). 한글이 새로 만든 글상자는
+ * 세로 정렬 가운데다.
+ */
+export interface ShapeTextBox extends ParagraphList {
+  /** 왼쪽·오른쪽·위·아래 여백 HWPUNIT16. 한글 기본값 1mm = 283. */
   margins: CellMargins;
-  verticalAlign: VerticalAlign;
-  /** 도형과 함께 텍스트를 회전한다. */
-  editable?: boolean;
-  /** 텍스트 각도, 1/100도. */
-  textAngle?: number;
-  /** 텍스트에 맞게 도형을 자동으로 키운다. */
-  autoExpand?: boolean;
+  /** 텍스트 최대 폭. 한글은 도형 폭을 쓴다. */
+  maxWidth: HwpUnit;
+  /** 최대 폭 뒤의 바이트. 한글 2024는 0 13바이트다. 없으면 그것을 쓴다. */
+  textBoxTrailing?: Uint8Array;
 }
 
 /**
@@ -577,9 +578,10 @@ export interface ShapeTextBox {
  */
 export interface ShapeBase extends Omit<ShapeComponent, "shapeId"> {
   placement: ObjectPlacement;
+  textBox?: ShapeTextBox;
   /**
-   * SHAPE_COMPONENT 아래에서 모델로 읽지 않은 레코드(지금은 글상자 LIST_HEADER와 문단). `depth`는
-   * CTRL_HEADER 기준이다. SHAPE_COMPONENT 바로 뒤, 도형별 레코드 앞에 쓴다.
+   * SHAPE_COMPONENT 아래에서 모델로 읽지 않은 레코드. `depth`는 CTRL_HEADER 기준이다. 글상자 뒤,
+   * 도형별 레코드 앞에 쓴다.
    */
   childRecords?: RawChildRecord[];
 }

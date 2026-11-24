@@ -850,3 +850,62 @@ describe("readShapeRectangle", () => {
     ).toThrow(RangeError);
   });
 });
+
+describe("글상자 (정정 91, experiments/object-overlap-lock, 한글 2024)", () => {
+  const path =
+    "docs/experiments/object-overlap-lock/rect-para-limit-off-270mm.hwp";
+  const bytes = () => new Uint8Array(readFileSync(join(root, path)));
+  /** 모든 SHAPE_COMPONENT 아래 레코드(태그:16진수). 글상자 LIST_HEADER와 문단이 들어 있다. */
+  function shapeSubtrees(file: Uint8Array): string[] {
+    const c = CFB.read(file, { type: "buffer" });
+    const compressed =
+      ((CFB.find(c, "FileHeader")!.content as Uint8Array)[36]! & 1) === 1;
+    const out: string[] = [];
+    const all = (n: RecordNode): void => {
+      out.push(`${n.tagId}:${hex(n.payload)}`);
+      n.children.forEach(all);
+    };
+    const walk = (n: RecordNode): void =>
+      n.tagId === SectionTag.ShapeComponent ? all(n) : n.children.forEach(walk);
+    const data = new Uint8Array(
+      CFB.find(c, "/BodyText/Section0")!.content as Uint8Array,
+    );
+    buildRecordTree(parseRecords(maybeInflate(data, compressed))).forEach(walk);
+    return out;
+  }
+  const textBoxOf = (doc: ReturnType<typeof parseHwp>) =>
+    drawingObjects(doc).find(
+      (r): r is RectangleControl => r.type === "rectangle" && !!r.textBox,
+    )!;
+
+  it("LIST_HEADER 8B 뒤 여백 ×4, 최대 폭, 0 13B를 읽는다", () => {
+    const rect = textBoxOf(parseHwp(bytes()));
+    expect(rect.childRecords).toBeUndefined();
+    expect(rect.textBox).toMatchObject({
+      margins: { left: 283, right: 283, top: 283, bottom: 283 },
+      maxWidth: rect.width,
+      verticalAlign: 2, // VerticalAlign.Center
+      textBoxTrailing: new Uint8Array(13),
+    });
+    expect(rect.textBox!.paragraphs).toHaveLength(1);
+  });
+
+  it("SHAPE_COMPONENT 하위 트리를 원본과 같은 바이트로 다시 쓴다", () => {
+    expect(shapeSubtrees(serializeHwp(parseHwp(bytes())))).toEqual(
+      shapeSubtrees(bytes()),
+    );
+  });
+
+  it("고친 여백만 바뀌고 새 글상자 끝은 0 13B다", () => {
+    const doc = parseHwp(bytes());
+    const box = textBoxOf(doc).textBox!;
+    box.margins.left = 567;
+    delete box.textBoxTrailing;
+    const header = shapeSubtrees(serializeHwp(doc)).find((r) =>
+      r.startsWith(`${SectionTag.ListHeader}:01000000`),
+    )!;
+    expect(header.split(":")[1]).toBe(
+      "010000002000000037021b011b011b015e5a0000" + "00".repeat(13),
+    );
+  });
+});
