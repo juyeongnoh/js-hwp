@@ -98,6 +98,14 @@ export class ByteReader {
     return value;
   }
 
+  /** float. IEEE 754 단정밀도. */
+  float32(): number {
+    this.#need(4);
+    const value = this.#view.getFloat32(this.#offset, true);
+    this.#offset += 4;
+    return value;
+  }
+
   /** double. IEEE 754 배정밀도. */
   float64(): number {
     this.#need(8);
@@ -288,6 +296,20 @@ export class ByteWriter {
     return this;
   }
 
+  /** float. 유한한 값만 받는다. 단정밀도로 반올림된다. */
+  float32(value: number): this {
+    if (!Number.isFinite(value))
+      throw new RangeError(`${value}는 유한한 float이 아니다.`);
+    this.#ensure(4);
+    new DataView(this.#buffer.buffer, this.#buffer.byteOffset).setFloat32(
+      this.#length,
+      value,
+      true,
+    );
+    this.#length += 4;
+    return this;
+  }
+
   hwpUnit(value: number): this {
     return this.uint32(Math.round(value));
   }
@@ -302,7 +324,10 @@ export class ByteWriter {
 
   /** COLORREF를 R, G, B, 최상위 바이트 순서로 내보낸다. */
   color(value: Rgb): this {
-    return this.uint8(value.r).uint8(value.g).uint8(value.b).uint8(value.unknown);
+    return this.uint8(value.r)
+      .uint8(value.g)
+      .uint8(value.b)
+      .uint8(value.unknown);
   }
 
   /** 코드 단위 개수를 담은 WORD, 그다음 UTF-16LE 데이터. NUL 종결자 없음. */

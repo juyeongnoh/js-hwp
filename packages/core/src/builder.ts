@@ -841,9 +841,18 @@ export class DocumentBuilder {
         : mm(35),
     );
 
+    // 한글은 원본 크기(96dpi 픽셀 × 75)로 넣고 크기를 바꾸면 현재 크기와 scale matrix만 고친다
+    // (experiments/shape-picture). 원본 크기를 모르면 넣는 크기를 원본으로 본다.
+    const dim =
+      intrinsic.width > 0 && intrinsic.height > 0
+        ? {
+            width: pxToHwp(intrinsic.width),
+            height: pxToHwp(intrinsic.height),
+          }
+        : { width, height };
+    const identity: ShapeMatrix = [1, 0, 0, 0, 1, 0];
     const picture: PictureControl = {
       type: "picture",
-      binDataId,
       placement: {
         ...DEFAULT_PLACEMENT,
         treatAsChar: options.inline !== false,
@@ -851,13 +860,55 @@ export class DocumentBuilder {
         height,
         description: options.alt,
       },
-      originalSize:
-        intrinsic.width > 0
-          ? {
-              width: pxToHwp(intrinsic.width),
-              height: pxToHwp(intrinsic.height),
-            }
-          : undefined,
+      // 개체 요소 속성: 한글이 새 그림에 쓰는 값(bit 19, 26, 29. 정정 101).
+      groupOffsetX: 0,
+      groupOffsetY: 0,
+      groupLevel: 0,
+      localVersion: 1,
+      initialWidth: dim.width,
+      initialHeight: dim.height,
+      width,
+      height,
+      unknownBits: ((1 << 19) | (1 << 26) | (1 << 29)) >>> 0,
+      rotation: 0,
+      rotationCenter: { x: Math.floor(width / 2), y: Math.floor(height / 2) },
+      translation: identity,
+      scaleRotations: [
+        {
+          scale: [width / dim.width, 0, 0, 0, height / dim.height, 0],
+          rotation: identity,
+        },
+      ],
+      // 그림 개체 속성: 한글 2024가 새 그림에 쓰는 값(default.hwp).
+      border: {
+        color: rgb(0, 0, 0),
+        width: 33,
+        style: 0,
+        endCap: 1,
+        startArrow: 0,
+        endArrow: 0,
+        startArrowSize: 4,
+        endArrowSize: 4,
+        startArrowFill: true,
+        endArrowFill: true,
+      },
+      borderTransparency: 0,
+      points: [
+        { x: 0, y: 0 },
+        { x: dim.width, y: 0 },
+        { x: dim.width, y: dim.height },
+        { x: 0, y: dim.height },
+      ],
+      crop: { left: 0, top: 0, right: dim.width, bottom: dim.height },
+      innerMargins: { left: 0, right: 0, top: 0, bottom: 0 },
+      contrast: 0,
+      brightness: 0,
+      effect: ImageEffect.RealPicture,
+      binDataId,
+      pictureInstanceId: 0,
+      effects: {},
+      originalSize: dim,
+      transparency: 0,
     };
 
     if (options.caption) {

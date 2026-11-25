@@ -481,7 +481,7 @@ export interface ShapeComponent {
   /**
    * 속성에서 bit 0, 1을 뺀 비트. 쓸 때 OR로 합친다. 명세에 없지만 한글은 다음을 쓴다(정정 101, E52).
    * - bit 19: HWPX `rotationInfo rotateimage`. 한글이 만드는 개체는 모두 1. 꺼도 그림은 같았다.
-   * - bit 24: 글상자가 있으면 켜진다.
+   * - bit 24: 글상자가 있으면 켜진다. 그림에서는 "그림 반전"(HWPX `hp:pic reverse`)이다(E53).
    * - bit 25: 회전한 그림에서 켜진다.
    * - bit 26: 그림이면 켜진다. 한글은 저장할 때 개체 종류로 다시 정한다.
    * - bit 29: 그림이면 켜진다. HWPX에 대응 속성이 없고 뜻을 모른다.
@@ -616,20 +616,146 @@ interface LegacyShapeBase {
   textBox?: ShapeTextBox;
 }
 
-export interface PictureControl extends LegacyShapeBase {
+/**
+ * 그림 테두리(표 107 앞 12바이트). {@link ShapeLine}과 같은 배치에서 Outline style이 없다. 한글이 새 그림에
+ * 쓰는 값은 검정, 굵기 33, 선 종류 0(없음)이고 HWPX에는 `hp:lineShape`가 없다(`experiments/shape-picture`).
+ */
+export type PictureBorder = Omit<ShapeLine, "outlineStyle">;
+
+/**
+ * 그림 효과의 색(표 113). 한글 2024 대화상자가 만든 색은 모두 색상 타입 0(RGB, HWPX `type="RGB"`)이었고,
+ * 그때는 타입 뒤에 RGB 4바이트와 색상 효과 수가 온다. 다른 타입은 모델로 읽지 않는다.
+ */
+export interface PictureEffectColor {
+  /** 파일에는 0x00rrggbb로 저장된다(COLORREF와 바이트 순서가 반대). */
+  rgb: Rgb;
+  /**
+   * 색상 효과(표 114) 목록. `kind`는 파일 값 그대로다. 한글은 HWPX `SAT_MOD`를 명세 표 115의 16이 아니라
+   * 516(0x204)으로 저장했다(정정 104).
+   */
+  effects: { kind: number; value: number }[];
+}
+
+/**
+ * 그림자 효과(표 109). 실수 필드는 float32다. 괄호는 HWPX `hp:shadow`의 이름이다.
+ */
+export interface PictureShadow {
+  /** 그림자 스타일(`style`). 0이 `OUTSIDE`다. */
+  style: number;
+  /** 투명도 0~1(`alpha`). 대화상자 53%가 0.53이다. */
+  transparency: number;
+  /** 흐리게(`radius`), 1pt = 100. */
+  blur: number;
+  /** 방향(`direction`), 도. */
+  direction: number;
+  /** 거리(`distance`), 1pt = 100. */
+  distance: number;
+  /** 정렬(`alignStyle`). 4가 `CENTER`다. */
+  align: number;
+  /** 기울기 각도(`skew`), 도. 대화상자 "기울기"는 x다. */
+  skewX: number;
+  skewY: number;
+  /** 확대 비율(`scale`). 대화상자 "크기"는 y다. */
+  scaleX: number;
+  scaleY: number;
+  /** 도형과 함께 그림자 회전(`rotationStyle`). INT32. */
+  rotateWithShape: number;
+  color: PictureEffectColor;
+}
+
+/** 네온 효과(표 110, HWPX `hp:glow`). */
+export interface PictureGlow {
+  /** 투명도 0~1(`alpha`). */
+  transparency: number;
+  /** 크기(`radius`), 1pt = 100. */
+  radius: number;
+  color: PictureEffectColor;
+}
+
+/**
+ * 반사 효과(표 112, HWPX `hp:reflection`). 명세는 53바이트라 적었지만 INT32·float 14개, 56바이트다
+ * (정정 103). 첫 INT32 "반사 스타일"은 정렬(`alignStyle`)로, 6이 `BOTTOM_LEFT`다.
+ */
+export interface PictureReflection {
+  align: number;
+  /** 반경(`radius`). */
+  radius: number;
+  direction: number;
+  /** 거리(`distance`), 1pt = 100. */
+  distance: number;
+  skewX: number;
+  skewY: number;
+  scaleX: number;
+  scaleY: number;
+  rotateWithShape: number;
+  /** 시작·끝 투명도(`alpha start`, `end`)와 위치(`pos start`, `end`). 대화상자 "크기" 77%가 끝 위치 0.77이다. */
+  startTransparency: number;
+  startPosition: number;
+  endTransparency: number;
+  endPosition: number;
+  /** 오프셋 방향(`fadeDirection`). */
+  fadeDirection: number;
+}
+
+/**
+ * 그림 효과(표 108). 효과 플래그 UINT32의 bit 0~3이 그림자, 네온, 옅은 테두리, 반사이고 블록도 이 순서로
+ * 온다(E53). HWPX `hp:effects`의 자식과 같다.
+ */
+export interface PictureEffects {
+  shadow?: PictureShadow;
+  glow?: PictureGlow;
+  /** 옅은 테두리 반경(표 111, HWPX `hp:softEdge radius`), 1pt = 100. */
+  softEdge?: number;
+  reflection?: PictureReflection;
+}
+
+/**
+ * 그림(`$pic`). 도형별 레코드 SHAPE_COMPONENT_PICTURE(표 107, 116)를 펼친 것이다. 한글 2024는 91바이트
+ * (효과 없음)를 쓰고, 오래된 파일에는 끝의 그림 투명도가 없는 90바이트도 있다. 근거는 E53,
+ * `experiments/shape-picture`다. 괄호는 HWPX `hp:pic` 아래 요소다.
+ *
+ * 개체 요소 속성(`unknownBits`)의 bit 24는 그림에서 "그림 반전"(HWPX `hp:pic reverse`)이다.
+ */
+export interface PictureControl extends ShapeBase {
   type: "picture";
-  /** {@link HwpDocument.binData}의 인덱스. */
+  /** 테두리(`hp:lineShape`). */
+  border: PictureBorder;
+  /** 테두리 투명도 0~255(`hp:lineShape alpha`). 대화상자 7%가 18이다. */
+  borderTransparency: number;
+  /**
+   * 이미지 테두리 사각형(`hp:imgRect`) 꼭짓점 4개. 명세는 x 4개 다음 y 4개로 적었지만 (x, y) 쌍
+   * 4개다(정정 102). 한글은 (0, 0), (폭, 0), (폭, 높이), (0, 높이)를 쓰고, 폭·높이는 그림을 넣을 때의
+   * 크기다. 자르거나 크기를 바꿔도 그대로다.
+   */
+  points: [Point, Point, Point, Point];
+  /**
+   * 자른 뒤 사각형(`hp:imgClip`). 원본 이미지 좌표(`originalSize` 기준)의 왼쪽·위·오른쪽·아래 좌표다.
+   * 자르지 않으면 (0, 0, 원본 폭, 원본 높이)다.
+   */
+  crop: { left: number; top: number; right: number; bottom: number };
+  /** 그림 여백(`hp:inMargin`). HWPUNIT16 왼쪽·오른쪽·위·아래 순. 한글 기본값 0. */
+  innerMargins: CellMargins;
+  /** 명암(`contrast`) -100~100. 그림 정보(표 32)는 명세와 달리 명암, 밝기 순이다(정정 11). */
+  contrast: number;
+  /** 밝기(`bright`) -100~100. 워터마크 효과는 밝기 70, 명암 -50으로만 저장된다. */
+  brightness: number;
+  /** 그림 효과(`effect`). 회색조 1, 흑백 2. */
+  effect: ImageEffect;
+  /** {@link HwpDocument.binData}의 인덱스. 파일의 BinItem ID는 1부터라 1을 뺀 값이다. */
   binDataId: number;
-  /** 자르기용 원본 사각형. */
-  crop?: { left: SHwpUnit; top: SHwpUnit; right: SHwpUnit; bottom: SHwpUnit };
-  /** 프레임과 이미지 사이의 안쪽 여백. */
-  innerMargins?: CellMargins;
-  brightness?: number;
-  contrast?: number;
-  effect?: ImageEffect;
-  transparency?: number;
-  /** "원래 크기로" 기능을 위해 보관하는 원본 크기. */
+  /** 그림 레코드의 인스턴스 ID(HWPX `hp:pic instid`). */
+  pictureInstanceId: number;
+  /**
+   * 그림 효과(`hp:effects`). 다시 썼을 때 원본과 같은 바이트가 되는 효과만 모델로 읽는다. 읽지 못하면
+   * 없고, 효과부터 끝까지가 `pictureTrailing`에 원본 그대로 남는다.
+   */
+  effects?: PictureEffects;
+  /** 그림 최초 생성 시 기준 이미지 크기(표 116, `hp:imgDim`). 96dpi 픽셀 × 75다. */
   originalSize?: { width: HwpUnit; height: HwpUnit };
+  /** 그림 투명도 0~255(표 116, `hp:img alpha`). 대화상자 5%가 13이다. 90바이트 레코드에는 없다. */
+  transparency?: number;
+  /** 그 뒤의 바이트. 그대로 붙인다. */
+  pictureTrailing?: Uint8Array;
 }
 
 /**

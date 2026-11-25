@@ -31,6 +31,10 @@ import {
   type ArcControl,
   type PolygonControl,
   type CurveControl,
+  type PictureControl,
+  type PictureBorder,
+  type PictureEffectColor,
+  type PictureEffects,
   type ShapeBase,
   type Point,
   type ShapeMatrix,
@@ -1326,7 +1330,6 @@ function readDrawingObject(
   node: RecordNode,
   context: ParseContext,
 ): Control | undefined {
-  const pictureNode = childWithTag(node, SectionTag.ShapeComponentPicture);
   const shapeNode = childWithTag(node, SectionTag.ShapeComponent);
   const reader = new ByteReader(node.payload);
   reader.uint32(); // ctrl id, already consumed by the caller's reader
@@ -1334,22 +1337,6 @@ function readDrawingObject(
   // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
   const caption = readLeadingCaption(node, SectionTag.ShapeComponent, context);
   if (caption) placement = { ...placement, caption };
-
-  if (pictureNode) {
-    const p = new ByteReader(pictureNode.payload);
-    p.uint8(); // border style
-    p.uint8();
-    p.uint32();
-    p.uint32();
-    // 바이너리 데이터 id는 네 모서리 점과 자르기 사각형 뒤에 있다. 모든 필드를
-    // 모델링하는 대신 거기까지 건너뛴다.
-    const binDataId = findBinDataId(pictureNode.payload);
-    return {
-      type: "picture",
-      binDataId: binDataId ?? 0,
-      placement,
-    };
-  }
 
   // CTRL_HEADER는 placement로, 캡션은 placement.caption으로, SHAPE_COMPONENT는 shapeComponent로
   // 쓰고 나머지 레코드는 그대로 보존한다.
@@ -1500,6 +1487,11 @@ const SHAPE_KINDS: Record<
     tag: SectionTag.ShapeComponentCurve,
     read: readCurveShape,
   },
+  $pic: {
+    type: "picture",
+    tag: SectionTag.ShapeComponentPicture,
+    read: readPictureShape,
+  },
 };
 
 /** 모델로 읽고 쓰는 도형 컨트롤. */
@@ -1509,7 +1501,8 @@ type ModeledShape =
   | EllipseControl
   | ArcControl
   | PolygonControl
-  | CurveControl;
+  | CurveControl
+  | PictureControl;
 
 const readPoint = (r: ByteReader): Point => ({ x: r.int32(), y: r.int32() });
 const writePoint = (w: ByteWriter, p: Point): ByteWriter =>
@@ -1731,6 +1724,230 @@ export function writeShapeRectangle(rectangle: ShapeRectangle): ByteWriter {
   return w;
 }
 
+/** SHAPE_COMPONENT_PICTURE(표 107, 116)이 담는 {@link PictureControl} 필드. */
+type ShapePicture = Specific<PictureControl>;
+
+/** 그림 효과 플래그(표 108)에서 아는 비트: 그림자, 네온, 옅은 테두리, 반사(E53). */
+const PICTURE_EFFECTS_KNOWN = 0b1111;
+
+/**
+ * 그림 개체 속성(표 107, 116). 효과 앞 78바이트: 테두리 12B(표 86에서 Outline style을 뺀 것), 꼭짓점
+ * (x, y) INT32 쌍 4개(정정 102), 자른 뒤 사각형 left·top·right·bottom, 그림 여백 HWPUNIT16 왼쪽·오른쪽·
+ * 위·아래, 그림 정보 5B(명암, 밝기, 효과, BinItem ID. 정정 11), 테두리 투명도 BYTE, 인스턴스 ID. 그 뒤에
+ * 그림 효과(표 108)와 원본 크기 HWPUNIT ×2, 그림 투명도 BYTE(표 116)가 온다. 78바이트보다 짧으면
+ * 읽지 않는다. 효과를 모델로 읽지 못하면 그 뒤를 `pictureTrailing`에 원본 그대로 둔다.
+ */
+export function readPictureShape(
+  payload: Uint8Array,
+): ShapePicture | undefined {
+  if (payload.length < 78) return undefined;
+  const r = new ByteReader(payload);
+  const border = readLineBody(r);
+  const points: ShapePicture["points"] = [
+    readPoint(r),
+    readPoint(r),
+    readPoint(r),
+    readPoint(r),
+  ];
+  const crop = {
+    left: r.int32(),
+    top: r.int32(),
+    right: r.int32(),
+    bottom: r.int32(),
+  };
+  const innerMargins = {
+    left: r.hwpUnit16(),
+    right: r.hwpUnit16(),
+    top: r.hwpUnit16(),
+    bottom: r.hwpUnit16(),
+  };
+  const picture: ShapePicture = {
+    border,
+    borderTransparency: 0,
+    points,
+    crop,
+    innerMargins,
+    contrast: r.int8(),
+    brightness: r.int8(),
+    effect: r.uint8(),
+    binDataId: r.uint16() - 1,
+    pictureInstanceId: 0,
+  };
+  picture.borderTransparency = r.uint8();
+  picture.pictureInstanceId = r.uint32();
+  const effects = readPictureEffects(r, payload);
+  if (effects) {
+    picture.effects = effects;
+    if (r.hasMore(8))
+      picture.originalSize = { width: r.uint32(), height: r.uint32() };
+    if (picture.originalSize && r.hasMore()) picture.transparency = r.uint8();
+  }
+  if (r.hasMore()) picture.pictureTrailing = r.rest();
+  return picture;
+}
+
+/**
+ * 그림 효과(표 108~114). 다시 써서 원본과 같은 바이트가 될 때만 돌려준다. 모르는 플래그 비트나 RGB가
+ * 아닌 색 타입처럼 길이를 알 수 없으면 커서를 되돌리고 `undefined`를 돌려준다.
+ */
+function readPictureEffects(
+  r: ByteReader,
+  payload: Uint8Array,
+): PictureEffects | undefined {
+  const start = r.offset;
+  try {
+    const flags = r.uint32();
+    if ((flags & ~PICTURE_EFFECTS_KNOWN) === 0) {
+      const effects: PictureEffects = {};
+      if (bit(flags, 0))
+        effects.shadow = {
+          style: r.int32(),
+          transparency: r.float32(),
+          blur: r.float32(),
+          direction: r.float32(),
+          distance: r.float32(),
+          align: r.int32(),
+          skewX: r.float32(),
+          skewY: r.float32(),
+          scaleX: r.float32(),
+          scaleY: r.float32(),
+          rotateWithShape: r.int32(),
+          color: readEffectColor(r),
+        };
+      if (bit(flags, 1))
+        effects.glow = {
+          transparency: r.float32(),
+          radius: r.float32(),
+          color: readEffectColor(r),
+        };
+      if (bit(flags, 2)) effects.softEdge = r.float32();
+      if (bit(flags, 3))
+        effects.reflection = {
+          align: r.int32(),
+          radius: r.float32(),
+          direction: r.float32(),
+          distance: r.float32(),
+          skewX: r.float32(),
+          skewY: r.float32(),
+          scaleX: r.float32(),
+          scaleY: r.float32(),
+          rotateWithShape: r.int32(),
+          startTransparency: r.float32(),
+          startPosition: r.float32(),
+          endTransparency: r.float32(),
+          endPosition: r.float32(),
+          fadeDirection: r.float32(),
+        };
+      const original = payload.subarray(start, r.offset);
+      const written = writePictureEffects(new ByteWriter(), effects).finish();
+      if (
+        written.length === original.length &&
+        written.every((b, i) => b === original[i])
+      )
+        return effects;
+    }
+  } catch (error) {
+    // 짧은 레코드, 모르는 색 타입, NaN 같은 값도 원본 그대로 보존한다.
+    if (!(error instanceof RangeError || error instanceof HwpFormatError))
+      throw error;
+  }
+  r.offset = start;
+  return undefined;
+}
+
+/** 색 속성(표 113): 색상 타입 INT32, 타입이 0(RGB)이면 0x00rrggbb, 색상 효과 수, (종류 INT32, 값 float) 쌍. */
+function readEffectColor(r: ByteReader): PictureEffectColor {
+  if (r.int32() !== 0)
+    throw new RangeError("RGB가 아닌 그림 효과 색 타입은 읽지 않는다.");
+  const [b, g, red, unknown] = [r.uint8(), r.uint8(), r.uint8(), r.uint8()];
+  const count = r.uint32();
+  if (!r.hasMore(8 * count))
+    throw new RangeError(`색상 효과 ${count}개가 레코드보다 길다.`);
+  const effects: PictureEffectColor["effects"] = [];
+  for (let i = 0; i < count; i++)
+    effects.push({ kind: r.int32(), value: r.float32() });
+  return { rgb: { r: red, g, b, unknown }, effects };
+}
+
+function writeEffectColor(w: ByteWriter, color: PictureEffectColor): void {
+  const { r, g, b, unknown } = color.rgb;
+  w.int32(0).uint8(b).uint8(g).uint8(r).uint8(unknown);
+  w.uint32(color.effects.length);
+  for (const e of color.effects) w.int32(e.kind).float32(e.value);
+}
+
+function writePictureEffects(
+  w: ByteWriter,
+  effects: PictureEffects,
+): ByteWriter {
+  const { shadow, glow, softEdge, reflection } = effects;
+  let flags = 0;
+  flags = setBit(flags, 0, shadow !== undefined);
+  flags = setBit(flags, 1, glow !== undefined);
+  flags = setBit(flags, 2, softEdge !== undefined);
+  flags = setBit(flags, 3, reflection !== undefined);
+  w.uint32(flags);
+  if (shadow) {
+    w.int32(shadow.style)
+      .float32(shadow.transparency)
+      .float32(shadow.blur)
+      .float32(shadow.direction)
+      .float32(shadow.distance)
+      .int32(shadow.align)
+      .float32(shadow.skewX)
+      .float32(shadow.skewY)
+      .float32(shadow.scaleX)
+      .float32(shadow.scaleY)
+      .int32(shadow.rotateWithShape);
+    writeEffectColor(w, shadow.color);
+  }
+  if (glow) {
+    w.float32(glow.transparency).float32(glow.radius);
+    writeEffectColor(w, glow.color);
+  }
+  if (softEdge !== undefined) w.float32(softEdge);
+  if (reflection)
+    w.int32(reflection.align)
+      .float32(reflection.radius)
+      .float32(reflection.direction)
+      .float32(reflection.distance)
+      .float32(reflection.skewX)
+      .float32(reflection.skewY)
+      .float32(reflection.scaleX)
+      .float32(reflection.scaleY)
+      .int32(reflection.rotateWithShape)
+      .float32(reflection.startTransparency)
+      .float32(reflection.startPosition)
+      .float32(reflection.endTransparency)
+      .float32(reflection.endPosition)
+      .float32(reflection.fadeDirection);
+  return w;
+}
+
+export function writePictureShape(picture: ShapePicture): ByteWriter {
+  if (picture.points.length !== 4)
+    throw new RangeError(
+      `그림 꼭짓점은 4개여야 한다: ${picture.points.length}개`,
+    );
+  const { crop, innerMargins: m } = picture;
+  const w = writeLineBody(new ByteWriter(), picture.border);
+  for (const p of picture.points) writePoint(w, p);
+  w.int32(crop.left).int32(crop.top).int32(crop.right).int32(crop.bottom);
+  w.hwpUnit16(m.left).hwpUnit16(m.right).hwpUnit16(m.top).hwpUnit16(m.bottom);
+  w.int8(picture.contrast)
+    .int8(picture.brightness)
+    .uint8(picture.effect)
+    .uint16(picture.binDataId + 1)
+    .uint8(picture.borderTransparency)
+    .uint32(picture.pictureInstanceId);
+  if (picture.effects) writePictureEffects(w, picture.effects);
+  if (picture.originalSize)
+    w.uint32(picture.originalSize.width).uint32(picture.originalSize.height);
+  if (picture.transparency !== undefined) w.uint8(picture.transparency);
+  if (picture.pictureTrailing) w.bytes(picture.pictureTrailing);
+  return w;
+}
+
 /** 개체 요소 속성(표 83) bit 0 수평 반전, bit 1 수직 반전. */
 const SHAPE_COMPONENT_KNOWN = 0b11;
 
@@ -1846,6 +2063,11 @@ const SHAPE_SHADOW_SIZE = 22;
  * 속성의 32비트는 모두 명세가 정의한다.
  */
 function readShapeLine(r: ByteReader): ShapeLine {
+  return { ...readLineBody(r), outlineStyle: r.uint8() };
+}
+
+/** 테두리 선 정보에서 Outline style 앞 12바이트. 그림 테두리(표 107)도 이 배치다. */
+function readLineBody(r: ByteReader): PictureBorder {
   const color = r.color();
   const width = r.int32();
   const properties = r.uint32();
@@ -1860,7 +2082,6 @@ function readShapeLine(r: ByteReader): ShapeLine {
     endArrowSize: bits(properties, 26, 29),
     startArrowFill: bit(properties, 30),
     endArrowFill: bit(properties, 31),
-    outlineStyle: r.uint8(),
   };
 }
 
@@ -1903,6 +2124,10 @@ function checkBitField(value: number, width: number, name: string): number {
 }
 
 function writeShapeLine(w: ByteWriter, line: ShapeLine): void {
+  writeLineBody(w, line).uint8(line.outlineStyle);
+}
+
+function writeLineBody(w: ByteWriter, line: PictureBorder): ByteWriter {
   let properties = 0;
   properties = setBits(
     properties,
@@ -1942,10 +2167,10 @@ function writeShapeLine(w: ByteWriter, line: ShapeLine): void {
   );
   properties = setBit(properties, 30, line.startArrowFill);
   properties = setBit(properties, 31, line.endArrowFill);
-  w.color(line.color)
+  return w
+    .color(line.color)
     .int32(line.width)
-    .uint32(properties >>> 0)
-    .uint8(line.outlineStyle);
+    .uint32(properties >>> 0);
 }
 
 /** {@link readShapeComponent}의 역. 개체 컨트롤 ID를 두 번 쓰고 행렬 쌍 수는 배열 길이로 쓴다. */
@@ -2001,25 +2226,6 @@ export function writeShapeComponent(shape: ShapeComponent): ByteWriter {
   }
   if (shape.trailing) w.bytes(shape.trailing);
   return w;
-}
-
-/**
- * 그림 레코드의 `binItemId`는 고정 크기 접두부 뒤에 오는 UINT16이다. 한글
- * 버전마다 접두부 패딩이 달라서, 고정 오프셋을 믿는 대신 그럴듯한 첫 id를
- * 훑어 찾는다.
- */
-function findBinDataId(payload: Uint8Array): number | undefined {
-  // 명세가 문서화하는 배치에서 id는 오프셋 74에 저장된다.
-  if (payload.length >= 76) {
-    const view = new DataView(
-      payload.buffer,
-      payload.byteOffset,
-      payload.byteLength,
-    );
-    const candidate = view.getUint16(74, true);
-    if (candidate > 0 && candidate < 0x1000) return candidate - 1;
-  }
-  return undefined;
 }
 
 /**
@@ -2613,7 +2819,14 @@ function writeControl(
       return;
     }
     case "picture":
-      writePicture(writer, doc, control);
+      writeShape(
+        writer,
+        doc,
+        control,
+        "$pic",
+        SectionTag.ShapeComponentPicture,
+        writePictureShape(control),
+      );
       return;
     case "rectangle":
       writeShape(
@@ -3069,7 +3282,14 @@ function writeShape(
 ): void {
   const { type: _, placement, textBox, childRecords, ...shape } = control;
   const header = new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject));
-  writeObjectPlacement(header, placement, 0, placement.caption !== undefined);
+  // 번호 종류 기본값: 그림은 1(그림), 그리기 개체는 0(없음).
+  const objectKind = control.type === "picture" ? 1 : 0;
+  writeObjectPlacement(
+    header,
+    placement,
+    objectKind,
+    placement.caption !== undefined,
+  );
   writer.nested(SectionTag.CtrlHeader, header, () => {
     // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
     if (placement.caption)
@@ -3082,48 +3302,6 @@ function writeShape(
     for (const r of childRecords ?? [])
       writer.writeAt(r.depth, r.tagId, r.payload);
     writer.writeAt(1, tag, specific.finish());
-  });
-}
-
-function writePicture(
-  writer: RecordWriter,
-  doc: HwpDocument,
-  picture: Extract<Control, { type: "picture" }>,
-): void {
-  const header = new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject));
-  const { caption } = picture.placement;
-  writeObjectPlacement(header, picture.placement, 1, caption !== undefined);
-
-  writer.nested(SectionTag.CtrlHeader, header, () => {
-    // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
-    // 그림 쓰기 자체는 아직 한글에서 검증하지 못했다(BACKLOG).
-    if (caption) writeCaption(writer, doc, caption, picture.placement.width);
-    const shape = new ByteWriter()
-      .uint32(0) // instance id
-      .int32(0) // x offset in group
-      .int32(0)
-      .uint32(0) // group level
-      .uint16(0) // local version
-      .int32(0)
-      .int32(0)
-      .uint32(picture.placement.width)
-      .uint32(picture.placement.height)
-      .uint32(0) // rotation
-      .int32(0)
-      .int32(0);
-    writer.write(SectionTag.ShapeComponent, shape);
-
-    const body = new ByteWriter();
-    body.uint8(0).uint8(0).uint32(0).uint32(0); // border line
-    for (let i = 0; i < 4; i++) {
-      body.int32(i === 1 || i === 2 ? picture.placement.width : 0);
-      body.int32(i >= 2 ? picture.placement.height : 0);
-    }
-    body.int32(0).int32(0).int32(0).int32(0); // crop
-    body.uint16(0).uint16(0).uint16(0).uint16(0); // inner margins
-    body.uint8(0).uint8(0).uint8(0); // brightness, contrast, effect
-    body.uint16(picture.binDataId + 1);
-    writer.write(SectionTag.ShapeComponentPicture, body);
   });
 }
 
