@@ -19,6 +19,7 @@ import {
   type PolygonControl,
   type CurveControl,
   type ShapeLine,
+  type PictureControl,
 } from "@js-hwp/core";
 import CFB from "cfb";
 import { describe, expect, it } from "vitest";
@@ -247,17 +248,17 @@ describe("개체 요소 속성 값 (한글 2024)", () => {
 
   it("그림: Rendering 정보에서 레코드가 끝난다", () => {
     const doc = load("docs/experiments/bullet-image-id/base.hwp");
-    const pic = drawingObjects(doc).find(
-      (c) => c.type === "unknown" && c.shapeComponent?.shapeId === "$pic",
-    ) as Extract<Gso, { type: "unknown" }>;
-    expect(pic.shapeComponent).toMatchObject({
+    const pic = doc.sections[0]!.paragraphs
+      .flatMap((p) => p.runs.flatMap((r) => r.items))
+      .find((i) => i.type === "picture") as PictureControl;
+    expect(pic).toMatchObject({
       width: 7381,
       height: 4500,
       unknownBits: 0x24080000,
     });
-    expect(pic.shapeComponent!.line).toBeUndefined();
-    expect(pic.shapeComponent!.fill).toBeUndefined();
-    expect(pic.shapeComponent!.trailing).toBeUndefined();
+    expect(pic.line).toBeUndefined();
+    expect(pic.fill).toBeUndefined();
+    expect(pic.trailing).toBeUndefined();
   });
 });
 

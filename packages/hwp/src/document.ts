@@ -279,8 +279,9 @@ export function serializeHwp(
 
   doc.binData.forEach((item, index) => {
     if (!item.data) return;
+    // 항목의 압축 설정(BIN_DATA 속성 bit 4~5)이 없으면 저장소 기본값(FileHeader 압축 플래그)을 따른다.
     streams[`BinData/${binDataStreamName(index, item.extension)}`] =
-      maybeDeflate(item.data, compress);
+      maybeDeflate(item.data, item.compressed ?? compress);
   });
 
   if (options.preview !== false) {

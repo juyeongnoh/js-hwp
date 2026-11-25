@@ -23,7 +23,7 @@ import {
   defaultParaShape,
   defaultPageDef,
 } from "./defaults.js";
-import { parseColor } from "./model/color.js";
+import { parseColor, rgb } from "./model/color.js";
 import {
   type Caption,
   CaptionSide,
@@ -37,6 +37,7 @@ import {
   type PictureControl,
   RelativeTo,
   type Run,
+  type ShapeMatrix,
   type TableCell,
   type TableControl,
   type TableRow,
@@ -45,6 +46,7 @@ import {
   HeadAlign,
   BinDataType,
   HeadingKind,
+  ImageEffect,
   StyleKind,
   type Numbering,
 } from "./model/docinfo.js";

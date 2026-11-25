@@ -742,11 +742,15 @@ export interface Style {
 // 바이너리 데이터 (이미지, OLE, 임베드 글꼴)
 // ---------------------------------------------------------------------------
 
+/**
+ * BIN_DATA 속성 bit 0~3(표 17). 명세대로 0이 LINK, 1이 EMBEDDING이다. 한글 2024가 넣은 그림은 속성
+ * `0x0021`(EMBEDDING, 압축 안 함)이다(`experiments/shape-picture/default.hwp`).
+ */
 export enum BinDataType {
-  /** 파일 안 `BinData/` 아래에 저장된다. */
-  Embedding = 0,
   /** 외부 경로로 참조한다. */
-  Link = 1,
+  Link = 0,
+  /** 파일 안 `BinData/` 아래에 저장된다. */
+  Embedding = 1,
   /** 파일 안에 OLE 저장소로 저장된다. */
   Storage = 2,
 }

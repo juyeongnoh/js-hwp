@@ -86,7 +86,7 @@ INT32 배열이다. 순서는 바이너리 데이터, 글꼴 7종(한글, 영어
 | UINT16      | 2            | EMBEDDING, STORAGE일 때만: 아이디. **1부터 시작**            |
 | WORD, WCHAR | 2 + 2×len3   | EMBEDDING일 때만: 확장자. `.` 제외, 대소문자는 저장된 그대로 |
 
-EMBEDDING의 전체 길이는 **6 + 2×len3**다. 스트림 이름은 **`BinData/BIN%04X.확장자`** 이고, `%04X`는 위 아이디다.
+EMBEDDING의 전체 길이는 **6 + 2×len3**다. 스트림 이름은 **`BinData/BIN%04X.확장자`** 이고, `%04X`는 위 아이디다. 한글 2024가 넣은 PNG 그림은 속성 `0x0021`(EMBEDDING, 압축 안 함)이고 스트림은 압축하지 않은 원본 파일이다(E54). 코덱은 스트림을 항목의 압축 설정대로 쓰고, 0(기본값)이면 FileHeader의 압축 플래그를 따른다.
 
 **[표 18] 바이너리 데이터 속성**
 
@@ -465,7 +465,7 @@ PARA_HEADER (0)
 
 ### 그리기 개체 (`gso `, SHAPE_COMPONENT)
 
-그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 사각형·선·타원·호·다각형·곡선은 각각의 컨트롤(`RectangleControl` 등)로 읽고 SHAPE_COMPONENT와 도형별 레코드의 필드를 컨트롤에 펼친다(`ShapeBase`). 그 밖의 개체(그림, 묶음, OLE 등)는 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
+그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 사각형·선·타원·호·다각형·곡선·그림은 각각의 컨트롤(`RectangleControl`, `PictureControl` 등)로 읽고 SHAPE_COMPONENT와 도형별 레코드의 필드를 컨트롤에 펼친다(`ShapeBase`). 그 밖의 개체(묶음, OLE 등)는 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
 
 ```
 CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
@@ -487,7 +487,7 @@ CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
 | 18 | WORD | local file version. 한글 2024는 1 (`localVersion`) |
 | 20 | UINT32 ×2 | 처음 폭·높이 (`initialWidth`, `initialHeight`) |
 | 28 | UINT32 ×2 | 현재 폭·높이 (`width`, `height`) |
-| 36 | UINT32 | 속성: bit 0 수평 반전(좌우 대칭), bit 1 수직 반전. **한글은 명세에 없는 bit 19, 24, 26, 29도 쓴다. bit 24는 글상자가 있으면 켜진다. 나머지는 뜻 모름**(정정 101) (`flipHorizontal`, `flipVertical`, `unknownBits`) |
+| 36 | UINT32 | 속성: bit 0 수평 반전(좌우 대칭), bit 1 수직 반전. **한글은 명세에 없는 bit 19, 24, 25, 26, 29도 쓴다. bit 24는 글상자가 있으면 켜지고, 그림에서는 "그림 반전"(HWPX `reverse`)이다. 나머지는 정정 101** (`flipHorizontal`, `flipVertical`, `unknownBits`) |
 | 40 | HWPUNIT16 | 회전각. **도 단위 정수.** 30° = 30, HWPX `rotationInfo angle`(정정 101, E50) (`rotation`) |
 | 42 | INT32 ×2 | 회전 중심. 한글은 폭·높이의 절반 (`rotationCenter`) |
 | 50 | WORD | scale/rotation 행렬 쌍 수 cnt. 쓸 때는 배열 길이 |
@@ -498,6 +498,29 @@ CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
 | 230 | 22B | **명세에 없음.** 그림자와 인스턴스 ID. 명세 표 81은 여기에 글상자 12B를 적었다 (`shadow`, `instanceId`, `afterInstanceId`) |
 
 그림은 Rendering 정보(오프셋 196)에서 레코드가 끝나고, 그림 고유 정보는 자식 SHAPE_COMPONENT_PICTURE에 있다.
+
+**그림 개체 속성(SHAPE_COMPONENT_PICTURE, 91B).** SHAPE_COMPONENT `$pic`의 마지막 자식이다. 명세 표 107(앞 78B), 108~115(효과), 116(끝 9B)을 이은 것이다. 코덱은 `readPictureShape`/`writePictureShape`, 모델은 `PictureControl`이다(정정 102~105, E53, `experiments/shape-picture`). 괄호는 HWPX `hp:pic` 아래 이름과 모델 필드다.
+
+| 오프셋 | 자료형 | 설명 |
+| --- | --- | --- |
+| 0 | 12B | 테두리: 색 COLORREF, 굵기 INT32, 속성 UINT32. 그리기 개체 테두리 선(13B)에서 **Outline style이 없는 것**. 한글 기본값은 검정, 33, 종류 0(없음)이고 이때 HWPX에는 `hp:lineShape`가 없다 (`border`) |
+| 12 | **INT32 ×2 ×4** | 꼭짓점 (x, y) 4개(`hp:imgRect`). **명세는 x 4개 다음 y 4개.** (0, 0), (폭, 0), (폭, 높이), (0, 높이)이고 폭·높이는 그림을 넣을 때의 크기다. 자르거나 크기를 바꿔도 그대로다 (`points`) |
+| 44 | INT32 ×4 | 자른 뒤 left, top, right, bottom(`hp:imgClip`). 원본 이미지 좌표다. 자르지 않으면 (0, 0, 원본 폭, 원본 높이) (`crop`) |
+| 60 | HWPUNIT16 ×4 | 그림 여백 왼쪽, 오른쪽, 위, 아래(`hp:inMargin`). 기본 0 (`innerMargins`) |
+| 68 | **INT8** | **명암**(`contrast`). **명세는 밝기가 먼저**(정정 11) (`contrast`) |
+| 69 | INT8 | 밝기(`bright`). 워터마크는 밝기 70, 명암 −50으로만 저장된다 (`brightness`) |
+| 70 | BYTE | 그림 효과(`effect`): 0 원래 그림, 1 회색조, 2 흑백 (`effect`, `ImageEffect`) |
+| 71 | UINT16 | BinItem ID. **1부터.** 모델은 `binData` 인덱스(0부터) (`binDataId`) |
+| 73 | BYTE | 테두리 투명도 0~255(`hp:lineShape alpha`). 대화상자 7% = 18 (`borderTransparency`) |
+| 74 | UINT32 | 인스턴스 ID(`instid`) (`pictureInstanceId`) |
+| 78 | UINT32 | 그림 효과 플래그: bit 0 그림자, 1 네온, 2 옅은 테두리, 3 반사. 블록이 이 순서로 뒤따른다(`hp:effects`) (`effects`) |
+| 82 | 가변 | 효과 블록. 그림자 44B + 색, 네온 8B + 색, 옅은 테두리 4B, 반사 **56B**(**명세는 53B**, 정정 103). 실수는 float32, 크기·거리는 1pt = 100 |
+| 끝 − 9 | HWPUNIT ×2 | 원본 크기(`hp:imgDim`), 96dpi 픽셀 × 75. **표 107은 이 9B를 적지 않았다**(정정 105) (`originalSize`) |
+| 끝 − 1 | BYTE | 그림 투명도 0~255(`hp:img alpha`). 대화상자 5% = 13. 오래된 90B 레코드에는 없다 (`transparency`) |
+
+효과 색(표 113)은 색상 타입 INT32 뒤에 그 타입의 값만 온다. 대화상자가 만든 색은 모두 타입 0(RGB)이었고, 그때는 0x00rrggbb UINT32, 색상 효과 수 UINT32, (종류 INT32, 값 float) 쌍이다. 네온 프리셋의 `SAT_MOD`는 **516**으로 저장됐다(명세 표 115는 16, 정정 104).
+
+코덱은 앞 78B를 읽고, 효과를 다시 써서 원본과 같은 바이트가 될 때만 `effects`로 둔다. 모르는 플래그 비트, RGB가 아닌 색 타입, 효과 중간에서 끝나는 레코드는 효과부터 끝까지를 `pictureTrailing`에 원본 그대로 둔다. 78B보다 짧으면 개체 전체를 `unknown`으로 둔다. 그림을 자르면 SHAPE_COMPONENT의 현재 크기가 자른 크기가 되고, 개체 공통 속성의 폭·높이는 여기에 그림 여백을 더한 값이다.
 
 **테두리 선 정보(13B).**
 
