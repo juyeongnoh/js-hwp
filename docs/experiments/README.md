@@ -28,6 +28,7 @@
 | `cell-vertical-align/`        | 셀 세로 정렬이 LIST_HEADER 속성(오프셋 4) bit 5~6인지, 새 셀 기본값 |
 | `list-header-properties/`     | 셀 LIST_HEADER 속성의 비트(글자 방향, 줄바꿈, bit 16~20, 21~31)와 셀 여백 순서를 HWPX 셀 속성과 대조. 한글 자동화로 생성 |
 | `caption-list-properties/`    | 캡션 LIST_HEADER 리스트 속성이 셀과 같은 비트 배치인지 HWPX `hp:subList`와 대조. 세로 정렬은 한글에서 확인했고, 다시 저장하는 대조는 아직 |
+| `caption-positions/`         | 한글 대화상자의 캡션 8방향, "한 줄로 입력", "여백 부분까지 너비 확대"가 저장되는 비트(표 10개, 사각형 1개). 정정 106, E55 |
 | `table-property-bits/`        | 표 속성(표 76) 쪽 경계 나눔 값과 명세에 없는 bit 3, 24, 25, 26을 한글 대화상자, HWPX `hp:tbl`, 다시 저장 결과와 대조 |
 | `shape-picture/`              | 그림 레코드(표 107~116)의 꼭짓점·자르기·여백·그림 정보·효과·원본 크기·투명도를 대화상자 값, HWPX `hp:pic`과 대조 |
 | `builder-picture/`            | 빌더가 만든 그림(인라인, 떠 있는 것, 캡션, 크기 변경)을 한글이 여는지, 다시 저장하면 바꾸는 값. BIN_DATA 유형 값 오류를 찾음 |

@@ -18,6 +18,7 @@
 
 import {
   type Caption,
+  CaptionSide,
   type Fill,
   type Control,
   type ObjectPlacement,
@@ -1213,13 +1214,27 @@ function leadingCaptionNodes(node: RecordNode, stopTag: number): RecordNode[] {
   return out;
 }
 
+/**
+ * 텍스트 최대 길이가 없을 때 한글이 쓰는 값(experiments/caption-positions, E55). 왼쪽·오른쪽
+ * 캡션은 캡션 폭, 위·아래 캡션은 개체 폭이고, 여백 부분까지 너비 확대면 왼쪽·오른쪽 바깥
+ * 여백을 더한다.
+ */
+function captionMaxWidth(caption: Caption, placement: ObjectPlacement): number {
+  if (caption.side === CaptionSide.Left || caption.side === CaptionSide.Right)
+    return caption.width;
+  if (!caption.fullSize) return placement.width;
+  return (
+    placement.width + (placement.marginLeft ?? 0) + (placement.marginRight ?? 0)
+  );
+}
+
 function writeCaption(
   writer: RecordWriter,
   doc: HwpDocument,
   caption: Caption,
-  objectWidth: number,
+  placement: ObjectPlacement,
 ): void {
-  const maxWidth = caption.maxWidth ?? objectWidth;
+  const maxWidth = caption.maxWidth ?? captionMaxWidth(caption, placement);
   let properties = (caption.unknownBits ?? 0) & ~0b111;
   properties = setBits(properties, 0, 1, caption.side);
   properties = setBit(properties, 2, caption.fullSize);
@@ -3137,7 +3152,7 @@ function writeTable(
 
   writer.nested(SectionTag.CtrlHeader, header, () => {
     // 캡션은 TABLE 레코드보다 앞, CTRL_HEADER의 첫 자식이다(table-caption-bottom.hwp).
-    if (caption) writeCaption(writer, doc, caption, table.placement.width);
+    if (caption) writeCaption(writer, doc, caption, table.placement);
     const body = new ByteWriter();
     let properties = (table.unknownBits ?? 0) & ~TABLE_PROPERTIES_KNOWN;
     // 쪽 경계에서 나눔이 없으면 한글의 새 표처럼 "나눔"(2)을 쓴다(정정 88).
@@ -3257,7 +3272,7 @@ function writeUnknownControl(
   writer.nested(SectionTag.CtrlHeader, header, () => {
     // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
     if (placement?.caption && !control.raw)
-      writeCaption(writer, doc, placement.caption, placement.width);
+      writeCaption(writer, doc, placement.caption, placement);
     if (control.shapeComponent)
       writer.write(
         SectionTag.ShapeComponent,
@@ -3293,7 +3308,7 @@ function writeShape(
   writer.nested(SectionTag.CtrlHeader, header, () => {
     // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
     if (placement.caption)
-      writeCaption(writer, doc, placement.caption, placement.width);
+      writeCaption(writer, doc, placement.caption, placement);
     writer.write(
       SectionTag.ShapeComponent,
       writeShapeComponent({ shapeId, ...shape }),

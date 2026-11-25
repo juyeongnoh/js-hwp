@@ -217,6 +217,93 @@ describe('캡션 리스트 속성 (표 65, experiments/caption-list-properties)'
   })
 })
 
+describe('캡션 8방향 (experiments/caption-positions, E55)', () => {
+  const dir = 'docs/experiments/caption-positions'
+  const read = (name: string) => new Uint8Array(readFileSync(join(root, dir, name)))
+  const section = (file: Uint8Array): string => {
+    const c = CFB.read(file, { type: 'buffer' })
+    const compressed = ((CFB.find(c, 'FileHeader')!.content as Uint8Array)[36]! & 1) === 1
+    return Buffer.from(maybeInflate(new Uint8Array(CFB.find(c, '/BodyText/Section0')!.content as Uint8Array), compressed)).toString('hex')
+  }
+  const captions = (bytes: Uint8Array) =>
+    parseHwp(bytes)
+      .sections[0]!.paragraphs.flatMap((p) => p.runs.flatMap((r) => r.items))
+      .flatMap((i) => ('placement' in i && i.placement?.caption ? [i.placement.caption] : []))
+  /** 캡션 LIST_HEADER의 리스트 속성·캡션 속성·폭·간격·텍스트 최대 길이. */
+  const fields = (bytes: Uint8Array) =>
+    tableCaptionRecords(bytes)
+      .filter((r) => r.startsWith(`0:${SectionTag.ListHeader}:`))
+      .map((r) => {
+        const v = Buffer.from(r.split(':')[2]!, 'hex')
+        return [v.readUInt32LE(4), v.readUInt32LE(8), v.readUInt32LE(12), v.readInt16LE(16), v.readUInt32LE(18)]
+      })
+
+  it('대화상자의 8방향을 4방향과 세로 정렬로 읽는다', () => {
+    const got = captions(read('table-caption-positions.hwp')).map((c) => [c.side, c.verticalAlign, c.lineWrap, c.fullSize, c.maxWidth])
+    const { Left, Right, Top, Bottom } = CaptionSide
+    const { Top: T, Center: C, Bottom: B } = VerticalAlign
+    expect(got).toEqual([
+      [Left, T, undefined, false, 8504], // 왼쪽 위
+      [Left, C, undefined, false, 8504], // 왼쪽 가운데
+      [Left, B, undefined, false, 8504], // 왼쪽 아래
+      [Top, T, undefined, false, 41954], // 위
+      [Bottom, T, undefined, false, 41954], // 아래
+      [Right, T, undefined, false, 8504], // 오른쪽 위
+      [Right, C, undefined, false, 8504], // 오른쪽 가운데
+      [Right, B, undefined, false, 8504], // 오른쪽 아래
+      [Bottom, T, ListLineWrap.Squeeze, false, 41954], // 아래 + 한 줄로 입력
+      [Bottom, T, undefined, true, 42520], // 아래 + 여백 부분까지 너비 확대
+    ])
+  })
+
+  it('그리기 개체 캡션도 같은 비트다', () => {
+    expect(captions(read('rect-caption-right-middle-oneline.hwp'))).toMatchObject([
+      { side: CaptionSide.Right, verticalAlign: VerticalAlign.Center, lineWrap: ListLineWrap.Squeeze, width: 8504, gap: 850, maxWidth: 8504 },
+    ])
+  })
+
+  it.each(['table-caption-positions.hwp', 'rect-caption-right-middle-oneline.hwp'])('%s의 구역 스트림을 원본과 같은 바이트로 다시 쓴다', (name) => {
+    const bytes = read(name)
+    expect(section(serializeHwp(parseHwp(bytes)))).toBe(section(bytes))
+  })
+
+  it.each([
+    ['left-top', 0x00, 0],
+    ['left-center', 0x20, 0],
+    ['left-bottom', 0x40, 0],
+    ['top', 0x00, 2],
+    ['bottom', 0x00, 3],
+    ['right-top', 0x00, 1],
+    ['right-center', 0x20, 1],
+    ['right-bottom', 0x40, 1],
+  ] as const)('편집 API의 %s 캡션을 한글처럼 쓴다', (position, list, captionProps) => {
+    const doc = new DocumentBuilder().table([['셀']], { caption: { text: '캡션', position } }).build()
+    const table = doc.sections[0]!.paragraphs[0]!.runs[0]!.items[0]
+    if (table?.type !== 'table') throw new Error('표가 없다')
+    const side = position.startsWith('left') || position.startsWith('right')
+    // 한글 기본값: 크기 30mm(8504), 간격 3mm(850). 텍스트 최대 길이는 왼쪽·오른쪽이면 캡션 폭, 위·아래면 표 폭.
+    expect(fields(serializeHwp(doc))).toEqual([[list, captionProps, 8504, 850, side ? 8504 : table.placement.width]])
+  })
+
+  it('한 줄로 입력은 bit 3, 여백 부분까지 너비 확대는 bit 2와 바깥 여백을 더한 최대 길이로 쓴다', () => {
+    const build = (caption: Parameters<DocumentBuilder['table']>[1]) => {
+      const doc = new DocumentBuilder().table([['셀']], caption).build()
+      const table = doc.sections[0]!.paragraphs[0]!.runs[0]!.items[0]
+      if (table?.type !== 'table') throw new Error('표가 없다')
+      return { doc, placement: table.placement }
+    }
+    expect(fields(serializeHwp(build({ caption: { text: '캡션', singleLine: true } }).doc))[0]!.slice(0, 2)).toEqual([0x08, 3])
+    const { doc, placement } = build({ caption: { text: '캡션', fullWidth: true } })
+    placement.marginLeft = 283
+    placement.marginRight = 283
+    expect(fields(serializeHwp(doc))[0]).toEqual([0, 7, 8504, 850, placement.width + 566])
+  })
+
+  it('여백 부분까지 너비 확대는 왼쪽·오른쪽 캡션에서 받지 않는다', () => {
+    expect(() => new DocumentBuilder().table([['셀']], { caption: { text: '캡션', position: 'left-center', fullWidth: true } })).toThrow(RangeError)
+  })
+})
+
 describe('개체 공통 속성 (experiments/object-common-props, 한글 2024)', () => {
   const dir = 'docs/experiments/object-common-props'
 

@@ -32,6 +32,7 @@ import {
   type FieldBeginControl,
   FieldKind,
   type InlineItem,
+  ListLineWrap,
   type ObjectPlacement,
   type Paragraph,
   type PictureControl,
@@ -48,6 +49,7 @@ import {
   HeadingKind,
   ImageEffect,
   StyleKind,
+  VerticalAlign,
   type Numbering,
 } from "./model/docinfo.js";
 import type { DocumentMeta, HwpDocument } from "./model/document.js";
@@ -346,9 +348,47 @@ export interface TableOptions {
   cellMargins?: Partial<CellMargins>;
   /** 표를 떠 있게 두지 않고 인라인으로 배치한다. */
   inline?: boolean;
-  caption?: string;
-  captionSide?: "top" | "bottom" | "left" | "right";
+  /** 캡션 텍스트 또는 위치 등을 포함한 캡션 옵션. 기본 위치는 아래. */
+  caption?: string | CaptionOptions;
 }
+
+/**
+ * 캡션 위치. 한글 개체 속성 › 여백/캡션의 3×3 격자(가운데 제외)와 같은 8방향이다. 왼쪽·오른쪽
+ * 캡션의 위·가운데·아래는 캡션 안 세로 정렬이다(E55).
+ */
+export type CaptionPosition =
+  | "top"
+  | "bottom"
+  | "left-top"
+  | "left-center"
+  | "left-bottom"
+  | "right-top"
+  | "right-center"
+  | "right-bottom";
+
+export interface CaptionOptions {
+  text: string;
+  /** 기본값 `"bottom"`. */
+  position?: CaptionPosition;
+  /** 한 줄로 입력: 자간을 줄여 한 줄에 맞춘다. */
+  singleLine?: boolean;
+  /** 여백 부분까지 너비 확대. 한글처럼 `"top"`, `"bottom"`에서만 쓸 수 있다. */
+  fullWidth?: boolean;
+}
+
+const CAPTION_POSITIONS: Record<
+  CaptionPosition,
+  [CaptionSide, VerticalAlign | undefined]
+> = {
+  top: [CaptionSide.Top, undefined],
+  bottom: [CaptionSide.Bottom, undefined],
+  "left-top": [CaptionSide.Left, undefined],
+  "left-center": [CaptionSide.Left, VerticalAlign.Center],
+  "left-bottom": [CaptionSide.Left, VerticalAlign.Bottom],
+  "right-top": [CaptionSide.Right, undefined],
+  "right-center": [CaptionSide.Right, VerticalAlign.Center],
+  "right-bottom": [CaptionSide.Right, VerticalAlign.Bottom],
+};
 
 /** 평문보다 풍부한 내용을 위해 표를 셀 단위로 만든다. */
 export class TableBuilder {
@@ -522,6 +562,10 @@ export interface ImageOptions {
   format?: string;
   /** 이미지를 인라인(기본값)으로 배치할지 떠 있게 할지. */
   inline?: boolean;
+  /**
+   * 아래 캡션 텍스트. 그림 캡션의 다른 위치는 한글 대화상자로 확인하지 않아 받지 않는다
+   * (표·사각형은 8방향, E55).
+   */
   caption?: string;
   alt?: string;
 }
@@ -806,10 +850,7 @@ export class DocumentBuilder {
     };
 
     if (options.caption) {
-      table.placement.caption = this.#caption(
-        options.caption,
-        options.captionSide,
-      );
+      table.placement.caption = this.#caption(options.caption);
     }
 
     this.#section.paragraphs.push({
@@ -914,7 +955,7 @@ export class DocumentBuilder {
     };
 
     if (options.caption) {
-      picture.placement.caption = this.#caption(options.caption, "bottom");
+      picture.placement.caption = this.#caption(options.caption);
     }
 
     this.#section.paragraphs.push({
@@ -1003,20 +1044,28 @@ export class DocumentBuilder {
     return this;
   }
 
-  #caption(
-    text: string,
-    side: TableOptions["captionSide"] = "bottom",
-  ): Caption {
-    const sides = {
-      top: CaptionSide.Top,
-      bottom: CaptionSide.Bottom,
-      left: CaptionSide.Left,
-      right: CaptionSide.Right,
-    };
+  /** 한글이 새 캡션에 쓰는 값(크기 30mm, 개체와의 간격 3mm)으로 캡션을 만든다. */
+  #caption(options: string | CaptionOptions): Caption {
+    const {
+      text,
+      position = "bottom",
+      singleLine,
+      fullWidth,
+    } = typeof options === "string" ? { text: options } : options;
+    const entry = CAPTION_POSITIONS[position];
+    if (!entry) throw new RangeError(`알 수 없는 캡션 위치: ${position}`);
+    const [side, verticalAlign] = entry;
+    if (fullWidth && side !== CaptionSide.Top && side !== CaptionSide.Bottom)
+      throw new RangeError(
+        "여백 부분까지 너비 확대는 위·아래 캡션에서만 쓸 수 있다",
+      );
     return {
-      side: sides[side ?? "bottom"],
-      width: this.#textWidth(),
-      gap: pt(5),
+      side,
+      ...(verticalAlign !== undefined ? { verticalAlign } : {}),
+      ...(singleLine ? { lineWrap: ListLineWrap.Squeeze } : {}),
+      ...(fullWidth ? { fullSize: true } : {}),
+      width: mm(30),
+      gap: mm(3),
       paragraphs: [
         buildParagraph(
           this.#resources,
