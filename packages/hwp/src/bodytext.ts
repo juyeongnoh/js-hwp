@@ -33,6 +33,9 @@ import {
   type PolygonControl,
   type CurveControl,
   type PictureControl,
+  type ContainerControl,
+  type GroupChild,
+  type UnknownGroupChild,
   type PictureBorder,
   type PictureEffectColor,
   type PictureEffects,
@@ -1371,37 +1374,111 @@ function readDrawingObject(
       placement,
       ...rawChildRecords(node, rest),
     };
-  // 도형별 레코드는 SHAPE_COMPONENT의 마지막 자식이고 뒤에 다른 레코드가 없을 때만 모델로 읽는다.
-  // 쓸 때 글상자·childRecords 뒤에 붙이므로 순서가 같아야 한다.
-  const shapeChildren = shapeNode!.children;
-  const last = shapeChildren[shapeChildren.length - 1];
-  const kind = SHAPE_KINDS[shapeComponent.shapeId];
-  const specific =
-    kind &&
-    rest.length === 1 &&
-    last?.tagId === kind.tag &&
-    last.children.length === 0
-      ? kind.read(last.payload)
+  // 도형별 레코드는 SHAPE_COMPONENT의 마지막 자식이고 CTRL_HEADER 아래에 그 뒤 레코드가 없을 때만 모델로
+  // 읽는다. 쓸 때 글상자·childRecords 뒤에 붙이므로 순서가 같아야 한다.
+  const object =
+    rest.length === 1
+      ? readShapeObject(shapeNode!, shapeComponent, node, context)
       : undefined;
-  if (kind && specific) {
-    const { shapeId: _, ...shape } = shapeComponent;
-    const middle = shapeChildren.slice(0, -1);
-    const textBox = readTextBox(middle, context);
-    return {
-      type: kind.type,
-      placement,
-      ...shape,
-      ...(textBox ? { textBox } : rawChildRecords(node, middle)),
-      ...specific,
-    } as Control;
-  }
+  if (object) return { ...object, placement } as Control;
   return {
     type: "unknown",
     ctrlId: CtrlId.DrawingObject,
     placement,
     shapeComponent,
-    ...rawChildRecords(node, [...shapeChildren, ...rest.slice(1)]),
+    ...rawChildRecords(node, [...shapeNode!.children, ...rest.slice(1)]),
   };
+}
+
+/** 모델로 읽은 도형 하나(문단에 놓인 개체에서는 `placement`를 뺀 것). */
+type ShapeObject = Exclude<GroupChild, UnknownGroupChild>;
+
+/**
+ * SHAPE_COMPONENT와 그 하위 레코드를 도형 모델로 읽는다. 도형별 레코드가 SHAPE_COMPONENT의 마지막 자식일
+ * 때만 읽고, 읽지 못하면 `undefined`다. `parent`는 SHAPE_COMPONENT의 부모(CTRL_HEADER 또는 바깥 `$con`)로,
+ * `childRecords`의 깊이를 이 기준으로 센다.
+ */
+function readShapeObject(
+  node: RecordNode,
+  shape: ShapeComponent,
+  parent: RecordNode,
+  context: ParseContext,
+): ShapeObject | undefined {
+  if (shape.shapeId === "$con") {
+    const body = readContainerBody(node, shape, context);
+    return body && { type: "container", ...body };
+  }
+  const kind = SHAPE_KINDS[shape.shapeId];
+  const children = node.children;
+  const last = children[children.length - 1];
+  const specific =
+    kind && last?.tagId === kind.tag && last.children.length === 0
+      ? kind.read(last.payload)
+      : undefined;
+  if (!kind || !specific) return undefined;
+  const { shapeId: _, ...rest } = shape;
+  const middle = children.slice(0, -1);
+  const textBox = readTextBox(middle, context);
+  return {
+    type: kind.type,
+    ...rest,
+    ...(textBox ? { textBox } : rawChildRecords(parent, middle)),
+    ...specific,
+  } as ShapeObject;
+}
+
+/**
+ * 묶음(`$con`)의 SHAPE_COMPONENT 뒤쪽과 자식을 읽는다(정정 107). 렌더링 정보 뒤에 자식 수 WORD, 자식 컨트롤 ID
+ * UINT32 ×n, 인스턴스 ID UINT32가 오고, 자식은 SHAPE_COMPONENT의 자식 레코드다. 자식 수와 ID가 자식 레코드와
+ * 맞지 않으면 `undefined`를 돌려줘 호출하는 쪽이 원본을 보존하게 한다.
+ */
+function readContainerBody(
+  node: RecordNode,
+  shape: ShapeComponent,
+  context: ParseContext,
+): Omit<ContainerControl, "type" | "placement"> | undefined {
+  const { trailing } = shape;
+  if (!trailing || shape.line || shape.fill || shape.shadow) return undefined;
+  const r = new ByteReader(trailing);
+  if (!r.hasMore(2)) return undefined;
+  const count = r.uint16();
+  if (!r.hasMore(4 * count + 4)) return undefined;
+  const ids = Array.from({ length: count }, () => r.uint32());
+  const instanceId = r.uint32();
+  const children = node.children;
+  if (
+    children.length !== count ||
+    children.some(
+      (child, i) =>
+        child.tagId !== SectionTag.ShapeComponent ||
+        child.payload.length < 4 ||
+        new ByteReader(child.payload).uint32() !== ids[i],
+    )
+  )
+    return undefined;
+  const { shapeId: _, trailing: __, ...base } = shape;
+  return {
+    ...base,
+    instanceId,
+    ...(r.hasMore() ? { containerTrailing: r.rest() } : {}),
+    children: children.map((child) => readGroupChild(child, node, context)),
+  };
+}
+
+/** 묶음 안 개체. 개체 컨트롤 ID를 한 번만 쓴다. 모델로 읽지 못하면 레코드를 원본 그대로 둔다. */
+function readGroupChild(
+  node: RecordNode,
+  parent: RecordNode,
+  context: ParseContext,
+): GroupChild {
+  const shape = readShapeComponent(node.payload, 1);
+  const object = shape && readShapeObject(node, shape, parent, context);
+  return (
+    object ?? {
+      type: "unknown",
+      records: rawChildRecords(parent, [node]).childRecords!,
+    }
+  );
 }
 
 /**
@@ -1974,11 +2051,12 @@ const SHAPE_COMPONENT_KNOWN = 0b11;
  */
 export function readShapeComponent(
   payload: Uint8Array,
+  idCount: 1 | 2 = 2,
 ): ShapeComponent | undefined {
   const r = new ByteReader(payload);
-  if (!r.hasMore(8 + 42 + 2)) return undefined;
+  if (!r.hasMore(4 * idCount + 42 + 2)) return undefined;
   const id = r.uint32();
-  if (r.uint32() !== id) return undefined;
+  if (idCount === 2 && r.uint32() !== id) return undefined;
   const groupOffsetX = r.int32();
   const groupOffsetY = r.int32();
   const groupLevel = r.uint16();
@@ -2188,8 +2266,14 @@ function writeLineBody(w: ByteWriter, line: PictureBorder): ByteWriter {
     .uint32(properties >>> 0);
 }
 
-/** {@link readShapeComponent}의 역. 개체 컨트롤 ID를 두 번 쓰고 행렬 쌍 수는 배열 길이로 쓴다. */
-export function writeShapeComponent(shape: ShapeComponent): ByteWriter {
+/**
+ * {@link readShapeComponent}의 역. 문단에 놓인 개체는 개체 컨트롤 ID를 두 번, 묶음 안 개체는 한 번 쓴다.
+ * 행렬 쌍 수는 배열 길이로 쓴다.
+ */
+export function writeShapeComponent(
+  shape: ShapeComponent,
+  idCount: 1 | 2 = 2,
+): ByteWriter {
   if (!/^[\x20-\x7e]{4}$/.test(shape.shapeId))
     throw new RangeError(
       `개체 컨트롤 ID는 ASCII 네 글자여야 한다: ${JSON.stringify(shape.shapeId)}`,
@@ -2198,10 +2282,9 @@ export function writeShapeComponent(shape: ShapeComponent): ByteWriter {
   let properties = (shape.unknownBits ?? 0) & ~SHAPE_COMPONENT_KNOWN;
   properties = setBit(properties, 0, shape.flipHorizontal);
   properties = setBit(properties, 1, shape.flipVertical);
-  const w = new ByteWriter()
-    .uint32(id)
-    .uint32(id)
-    .int32(shape.groupOffsetX)
+  const w = new ByteWriter().uint32(id);
+  if (idCount === 2) w.uint32(id);
+  w.int32(shape.groupOffsetX)
     .int32(shape.groupOffsetY)
     .uint16(shape.groupLevel)
     .uint16(shape.localVersion)
@@ -2834,74 +2917,14 @@ function writeControl(
       return;
     }
     case "picture":
-      writeShape(
-        writer,
-        doc,
-        control,
-        "$pic",
-        SectionTag.ShapeComponentPicture,
-        writePictureShape(control),
-      );
-      return;
     case "rectangle":
-      writeShape(
-        writer,
-        doc,
-        control,
-        "$rec",
-        SectionTag.ShapeComponentRectangle,
-        writeShapeRectangle(control),
-      );
-      return;
     case "line":
-      writeShape(
-        writer,
-        doc,
-        control,
-        "$lin",
-        SectionTag.ShapeComponentLine,
-        writeLineShape(control),
-      );
-      return;
     case "ellipse":
-      writeShape(
-        writer,
-        doc,
-        control,
-        "$ell",
-        SectionTag.ShapeComponentEllipse,
-        writeEllipseShape(control),
-      );
-      return;
     case "arc":
-      writeShape(
-        writer,
-        doc,
-        control,
-        "$arc",
-        SectionTag.ShapeComponentArc,
-        writeArcShape(control),
-      );
-      return;
     case "polygon":
-      writeShape(
-        writer,
-        doc,
-        control,
-        "$pol",
-        SectionTag.ShapeComponentPolygon,
-        writePolygonShape(control),
-      );
-      return;
     case "curve":
-      writeShape(
-        writer,
-        doc,
-        control,
-        "$cur",
-        SectionTag.ShapeComponentCurve,
-        writeCurveShape(control),
-      );
+    case "container":
+      writeDrawingObject(writer, doc, control);
       return;
     case "autoNumber": {
       let props = (control.unknownBits ?? 0) & ~AUTO_NUMBER_KNOWN;
@@ -3283,22 +3306,20 @@ function writeUnknownControl(
   });
 }
 
-/**
- * 모델로 읽은 도형: CTRL_HEADER, 캡션, SHAPE_COMPONENT, 글상자, 미해석 자식, 그리고 SHAPE_COMPONENT의
- * 마지막 자식인 도형별 레코드(`specific`) 순서로 쓴다.
- */
-function writeShape(
+/** 모델로 읽은 도형을 CTRL_HEADER, 캡션, 그리고 {@link writeShapeObject} 순서로 쓴다. */
+function writeDrawingObject(
   writer: RecordWriter,
   doc: HwpDocument,
-  control: ModeledShape,
-  shapeId: string,
-  tag: number,
-  specific: ByteWriter,
+  control: ModeledShape | ContainerControl,
 ): void {
-  const { type: _, placement, textBox, childRecords, ...shape } = control;
+  const { placement } = control;
+  if (!placement)
+    throw new RangeError("문단에 놓인 그리기 개체에는 placement가 있어야 한다.");
   const header = new ByteWriter().uint32(writeCtrlId(CtrlId.DrawingObject));
-  // 번호 종류 기본값: 그림은 1(그림), 그리기 개체는 0(없음).
-  const objectKind = control.type === "picture" ? 1 : 0;
+  // 번호 종류 기본값: 그림과 묶음은 1(그림), 그리기 개체는 0(없음). 한글이 만든 묶음은 1이다
+  // (experiments/shape-container, HWPX numberingType="PICTURE").
+  const objectKind =
+    control.type === "picture" || control.type === "container" ? 1 : 0;
   writeObjectPlacement(
     header,
     placement,
@@ -3309,14 +3330,138 @@ function writeShape(
     // 캡션은 SHAPE_COMPONENT보다 앞, CTRL_HEADER의 첫 자식이다(rect-caption-bottom.hwp).
     if (placement.caption)
       writeCaption(writer, doc, placement.caption, placement);
-    writer.write(
-      SectionTag.ShapeComponent,
-      writeShapeComponent({ shapeId, ...shape }),
+    writeShapeObject(writer, doc, control, 2);
+  });
+}
+
+/** 도형 타입별 개체 컨트롤 ID, 도형별 레코드 태그, 그 레코드를 만드는 함수. */
+function shapeSpecific(
+  object: Exclude<ShapeObject, { type: "container" }>,
+): { shapeId: string; tag: number; specific: ByteWriter } {
+  switch (object.type) {
+    case "picture":
+      return {
+        shapeId: "$pic",
+        tag: SectionTag.ShapeComponentPicture,
+        specific: writePictureShape(object),
+      };
+    case "rectangle":
+      return {
+        shapeId: "$rec",
+        tag: SectionTag.ShapeComponentRectangle,
+        specific: writeShapeRectangle(object),
+      };
+    case "line":
+      return {
+        shapeId: "$lin",
+        tag: SectionTag.ShapeComponentLine,
+        specific: writeLineShape(object),
+      };
+    case "ellipse":
+      return {
+        shapeId: "$ell",
+        tag: SectionTag.ShapeComponentEllipse,
+        specific: writeEllipseShape(object),
+      };
+    case "arc":
+      return {
+        shapeId: "$arc",
+        tag: SectionTag.ShapeComponentArc,
+        specific: writeArcShape(object),
+      };
+    case "polygon":
+      return {
+        shapeId: "$pol",
+        tag: SectionTag.ShapeComponentPolygon,
+        specific: writePolygonShape(object),
+      };
+    case "curve":
+      return {
+        shapeId: "$cur",
+        tag: SectionTag.ShapeComponentCurve,
+        specific: writeCurveShape(object),
+      };
+  }
+}
+
+/**
+ * 도형 하나를 현재 레벨에 쓴다: SHAPE_COMPONENT, 글상자, 미해석 자식, 그리고 SHAPE_COMPONENT의 마지막 자식인
+ * 도형별 레코드 순서다. 묶음은 SHAPE_COMPONENT 뒤에 자식을 쓴다. 문단에 놓인 개체는 컨트롤 ID를 두 번,
+ * 묶음 안 개체는 한 번 쓴다.
+ */
+function writeShapeObject(
+  writer: RecordWriter,
+  doc: HwpDocument,
+  object: ShapeObject,
+  idCount: 1 | 2,
+): void {
+  if (object.type === "container") {
+    writeContainer(writer, doc, object, idCount);
+    return;
+  }
+  const { shapeId, tag, specific } = shapeSpecific(object);
+  const { type: _, textBox, childRecords, ...shape } = object;
+  writer.write(
+    SectionTag.ShapeComponent,
+    writeShapeComponent({ shapeId, ...shape }, idCount),
+  );
+  if (textBox) writer.descend(() => writeTextBox(writer, doc, textBox));
+  for (const r of childRecords ?? [])
+    writer.writeAt(r.depth, r.tagId, r.payload);
+  writer.writeAt(1, tag, specific.finish());
+}
+
+/** 묶음 안 개체의 컨트롤 ID. 모델로 읽지 못한 개체는 원본 SHAPE_COMPONENT의 첫 4바이트다. */
+function groupChildId(child: GroupChild): number {
+  if (child.type === "container") return writeCtrlId("$con");
+  if (child.type !== "unknown") return writeCtrlId(shapeSpecific(child).shapeId);
+  const [first] = child.records;
+  if (
+    first?.depth !== 0 ||
+    first.tagId !== SectionTag.ShapeComponent ||
+    first.payload.length < 4
+  )
+    throw new RangeError(
+      "묶음 안 미해석 개체의 첫 레코드는 깊이 0의 SHAPE_COMPONENT여야 한다.",
     );
-    if (textBox) writer.descend(() => writeTextBox(writer, doc, textBox));
-    for (const r of childRecords ?? [])
-      writer.writeAt(r.depth, r.tagId, r.payload);
-    writer.writeAt(1, tag, specific.finish());
+  return new ByteReader(first.payload).uint32();
+}
+
+/**
+ * 묶음(정정 107): 렌더링 정보 뒤에 자식 수, 자식 컨트롤 ID, 인스턴스 ID를 붙인 SHAPE_COMPONENT `$con`과, 그
+ * 자식으로 묶인 개체를 쓴다.
+ */
+function writeContainer(
+  writer: RecordWriter,
+  doc: HwpDocument,
+  container: Omit<ContainerControl, "placement">,
+  idCount: 1 | 2,
+): void {
+  const tail = new ByteWriter().uint16(container.children.length);
+  for (const child of container.children) tail.uint32(groupChildId(child));
+  tail.uint32(container.instanceId);
+  if (container.containerTrailing) tail.bytes(container.containerTrailing);
+  const {
+    type: _,
+    children,
+    instanceId: __,
+    containerTrailing: ___,
+    ...shape
+  } = container;
+  writer.write(
+    SectionTag.ShapeComponent,
+    writeShapeComponent(
+      { shapeId: "$con", ...shape, trailing: tail.finish() },
+      idCount,
+    ),
+  );
+  writer.descend(() => {
+    for (const child of children) {
+      if (child.type === "unknown")
+        for (const r of child.records)
+          writer.writeAt(r.depth, r.tagId, r.payload);
+      else writeShapeObject(writer, doc, child, 1);
+    }
   });
 }
 

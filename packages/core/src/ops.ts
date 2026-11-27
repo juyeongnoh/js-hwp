@@ -7,6 +7,7 @@
 
 import type {
   Control,
+  GroupChild,
   InlineItem,
   Paragraph,
   Run,
@@ -96,8 +97,18 @@ function* walkNested(
       );
       break;
     case "container":
-      for (const child of item.children)
-        yield* walkNested(child, sectionIndex, `${path}/container`);
+      yield* walkGroupChildren(
+        item.children,
+        sectionIndex,
+        `${path}/container`,
+      );
+      if (item.placement.caption) {
+        yield* walkParagraphList(
+          item.placement.caption.paragraphs,
+          sectionIndex,
+          `${path}/caption`,
+        );
+      }
       break;
     default:
       if ("textBox" in item && item.textBox) {
@@ -115,6 +126,24 @@ function* walkNested(
         );
       }
       break;
+  }
+}
+
+/** 묶음 안 개체의 글상자 문단. 묶음 안 개체에는 캡션이 없다. */
+function* walkGroupChildren(
+  children: GroupChild[],
+  sectionIndex: number,
+  path: string,
+): Generator<ParagraphLocation> {
+  for (const child of children) {
+    if (child.type === "container")
+      yield* walkGroupChildren(child.children, sectionIndex, `${path}/container`);
+    else if ("textBox" in child && child.textBox)
+      yield* walkParagraphList(
+        child.textBox.paragraphs,
+        sectionIndex,
+        `${path}/textbox`,
+      );
   }
 }
 

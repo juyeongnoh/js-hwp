@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BinDataType, DocumentBuilder, ImageEffect, walkControls, type PictureControl } from '@js-hwp/core'
+import { BinDataType, DocumentBuilder, ImageEffect, walkControls, type Control, type GroupChild, type PictureControl } from '@js-hwp/core'
 import CFB from 'cfb'
 import { describe, expect, it } from 'vitest'
 import { readPictureShape, writePictureShape } from '../src/bodytext.js'
@@ -35,8 +35,16 @@ function pictureRecords(bytes: Uint8Array): Uint8Array[] {
   return out
 }
 
-const pictures = (bytes: Uint8Array): PictureControl[] =>
-  [...walkControls(parseHwp(bytes))].filter((c): c is PictureControl => c.type === 'picture')
+/** 문서의 그림. 묶음 안 그림(`placement`가 없다)도 넣는다. */
+const pictures = (bytes: Uint8Array): Omit<PictureControl, 'placement'>[] => {
+  const out: Omit<PictureControl, 'placement'>[] = []
+  const visit = (c: Control | GroupChild): void => {
+    if (c.type === 'picture') out.push(c)
+    else if (c.type === 'container') c.children.forEach(visit)
+  }
+  for (const c of walkControls(parseHwp(bytes))) visit(c)
+  return out
+}
 
 const experiment = (name: string) => {
   const bytes = new Uint8Array(readFileSync(join(root, `docs/experiments/shape-picture/${name}.hwp`)))

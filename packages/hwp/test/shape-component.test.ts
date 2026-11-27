@@ -57,13 +57,25 @@ const hex = (b: Uint8Array): string => Buffer.from(b).toString("hex");
 
 /** 모든 SHAPE_COMPONENT 페이로드(16진수)를 나온 순서대로. */
 function shapeComponents(bytes: Uint8Array): string[] {
+  return shapeComponentsWithIdCount(bytes).map(([payload]) => payload);
+}
+
+/**
+ * 모든 SHAPE_COMPONENT 페이로드(16진수)와 개체 컨트롤 ID를 쓴 횟수. 묶음(`$con`) 안의 개체는 SHAPE_COMPONENT의
+ * 자식이고 ID를 한 번만 쓴다(정정 107).
+ */
+function shapeComponentsWithIdCount(bytes: Uint8Array): [string, 1 | 2][] {
   const c = CFB.read(bytes, { type: "buffer" });
   const header = CFB.find(c, "FileHeader")!.content as Uint8Array;
   const compressed = (header[36]! & 1) === 1;
-  const out: string[] = [];
-  const walk = (n: RecordNode): void => {
-    if (n.tagId === SectionTag.ShapeComponent) out.push(hex(n.payload));
-    n.children.forEach(walk);
+  const out: [string, 1 | 2][] = [];
+  const walk = (n: RecordNode, parent?: RecordNode): void => {
+    if (n.tagId === SectionTag.ShapeComponent)
+      out.push([
+        hex(n.payload),
+        parent?.tagId === SectionTag.ShapeComponent ? 1 : 2,
+      ]);
+    n.children.forEach((child) => walk(child, n));
   };
   for (const p of c.FullPaths.filter((p) => /BodyText\/Section\d+$/.test(p))) {
     const data = new Uint8Array(
@@ -155,9 +167,11 @@ describe("저장소 HWP 파일의 SHAPE_COMPONENT", () => {
   it.each(withShapes.map((f) => [f.slice(root.length + 1), f]))(
     "%s 모델로 읽음",
     (_, file) => {
-      const payloads = shapeComponents(new Uint8Array(readFileSync(file)));
-      for (const p of payloads) {
-        const shape = readShapeComponent(Buffer.from(p, "hex"));
+      const payloads = shapeComponentsWithIdCount(
+        new Uint8Array(readFileSync(file)),
+      );
+      for (const [p, idCount] of payloads) {
+        const shape = readShapeComponent(Buffer.from(p, "hex"), idCount);
         expect(shape).toBeDefined();
         // 저장소의 그리기 개체는 사각형뿐이고, 모두 테두리 선·채우기·그림자를 모델로 읽어 남는 바이트가 없다.
         if (shape!.shapeId === "$rec") {

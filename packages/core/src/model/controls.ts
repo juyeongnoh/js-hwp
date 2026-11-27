@@ -954,10 +954,66 @@ export interface OleControl extends LegacyShapeBase {
   extent?: { width: HwpUnit; height: HwpUnit };
 }
 
-export interface ContainerControl extends LegacyShapeBase {
+/**
+ * 묶음(`$con`, HWPX `hp:container`). 명세는 묶음 개체 속성을 HWPTAG_SHAPE_COMPONENT_CONTAINER 레코드로
+ * 적었지만 한글은 그 레코드를 쓰지 않는다. 묶음은 SHAPE_COMPONENT `$con` 하나이고, 렌더링 정보 뒤에 자식 수,
+ * 자식 컨트롤 ID, 인스턴스 ID가 온다. 선·채우기·그림자는 없다. 자식은 그 SHAPE_COMPONENT의 자식
+ * 레코드다(정정 107, E56, `experiments/shape-container`).
+ *
+ * 문단에 놓인 묶음은 `placement`가 있고, 묶음 안의 묶음은 없다({@link GroupChild}). 개체 요소 속성은
+ * 한글이 만든 묶음에서 `0x80000`이고 안쪽 묶음은 bit 16이 켜진다.
+ */
+export interface ContainerControl
+  extends Omit<
+    ShapeBase,
+    | "line"
+    | "fill"
+    | "shadow"
+    | "instanceId"
+    | "afterInstanceId"
+    | "trailing"
+    | "textBox"
+    | "childRecords"
+  > {
   type: "container";
-  children: DrawingControl[];
+  /** 묶인 개체. 파일의 자식 ID 배열은 이 순서대로 각 자식의 개체 ID로 쓴다. */
+  children: GroupChild[];
+  /** 자식 ID 배열 뒤의 UINT32. 묶음의 인스턴스 ID(HWPX `hp:container instid`)다. 명세에 없다. */
+  instanceId: number;
+  /** 인스턴스 ID 뒤의 바이트. 한글이 만든 묶음에는 없다. 그대로 붙인다. */
+  containerTrailing?: Uint8Array;
 }
+
+/** 유니언의 각 타입에서 `placement`를 뺀다. */
+type WithoutPlacement<T> = T extends unknown ? Omit<T, "placement"> : never;
+
+/**
+ * 묶음 안에서 모델로 읽지 못한 개체. 그 SHAPE_COMPONENT와 하위 레코드를 원본 그대로 둔다. `depth`는
+ * SHAPE_COMPONENT가 0이다.
+ */
+export interface UnknownGroupChild {
+  type: "unknown";
+  records: RawChildRecord[];
+}
+
+/**
+ * 묶음 안의 개체. 문단에 놓인 개체와 같은 타입에서 `placement`(CTRL_HEADER)만 없다. 파일에서는 개체 컨트롤
+ * ID를 한 번만 쓴다. `groupLevel`은 묶인 깊이(묶음 바로 안이 1)이고 행렬 쌍 수는 groupLevel + 1이다.
+ * `groupOffsetX`·`groupOffsetY`는 묶음 안 위치(HWPX `hp:offset`)다. `childRecords`의 `depth`는 이 개체의
+ * SHAPE_COMPONENT가 0인 기준이다(문단에 놓인 개체의 CTRL_HEADER 기준과 같은 값이 된다).
+ */
+export type GroupChild =
+  | WithoutPlacement<
+      | PictureControl
+      | LineControl
+      | RectangleControl
+      | EllipseControl
+      | ArcControl
+      | PolygonControl
+      | CurveControl
+      | ContainerControl
+    >
+  | UnknownGroupChild;
 
 export type DrawingControl =
   | PictureControl

@@ -476,7 +476,7 @@ PARA_HEADER (0)
 
 ### 그리기 개체 (`gso `, SHAPE_COMPONENT)
 
-그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 사각형·선·타원·호·다각형·곡선·그림은 각각의 컨트롤(`RectangleControl`, `PictureControl` 등)로 읽고 SHAPE_COMPONENT와 도형별 레코드의 필드를 컨트롤에 펼친다(`ShapeBase`). 그 밖의 개체(묶음, OLE 등)는 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
+그리기 개체와 그림은 CTRL_HEADER ctrlId가 모두 `gso `다(정정 77). 개체의 종류와 모양은 그 아래 레코드에 있다. 명세 4.3.9.2는 SHAPE_COMPONENT 한 레코드에 개체 요소 속성, 테두리 선, 채우기, 글상자가 이어지는 것처럼 적었지만 실제 배치는 아래와 같다. 근거는 정정 77, 89~91과 E37~E39, `experiments/object-common-props`, `experiments/shape-outline-style`, `experiments/shape-shadow`다. 코덱은 `readShapeComponent`/`writeShapeComponent`이고 모델은 `ShapeComponent`다(괄호 안 이름). 사각형·선·타원·호·다각형·곡선·그림은 각각의 컨트롤(`RectangleControl`, `PictureControl` 등)로 읽고 SHAPE_COMPONENT와 도형별 레코드의 필드를 컨트롤에 펼친다(`ShapeBase`). 묶음은 `ContainerControl`로 읽는다(아래 "묶음 개체"). 그 밖의 개체(OLE 등)는 `unknown`으로 읽고 `shapeComponent` 필드에 둔다.
 
 ```
 CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
@@ -610,7 +610,31 @@ CTRL_HEADER 'gso '            ctrlId + 개체 공통 속성 (placement)
 
 짧은 레코드나 점 수가 레코드보다 큰 레코드는 읽지 않고 개체 전체를 `unknown`으로 둔다. 다각형·곡선의 끝 바이트는 비어 있어도 보존하고, 새로 만든 개체에는 0 4바이트를 쓴다.
 
-코덱은 앞에서부터 해석할 수 있는 데까지만 모델로 읽는다. ID가 두 번 오지 않거나, 행렬보다 짧거나, 행렬 원소가 유한하지 않으면 SHAPE_COMPONENT 전체를 `childRecords`에 원본 그대로 둔다. 채우기는 읽은 값을 다시 써서 원본과 같을 때만 `fill`로 두고, 채우기나 그림자를 읽지 못하면 그 뒤 바이트를 `trailing`에 남긴다.
+코덱은 앞에서부터 해석할 수 있는 데까지만 모델로 읽는다. 문단에 놓인 개체에서 ID가 두 번 오지 않거나, 행렬보다 짧거나, 행렬 원소가 유한하지 않으면 SHAPE_COMPONENT 전체를 `childRecords`에 원본 그대로 둔다. 채우기는 읽은 값을 다시 써서 원본과 같을 때만 `fill`로 두고, 채우기나 그림자를 읽지 못하면 그 뒤 바이트를 `trailing`에 남긴다.
+
+**묶음 개체(`$con`).** 명세 4.3.9.7은 HWPTAG_SHAPE_COMPONENT_CONTAINER(태그 70) 레코드를 적었지만 한글은 이 레코드를 쓰지 않는다(정정 107, E56, `experiments/shape-container`). 묶음은 SHAPE_COMPONENT `$con` 하나이고, 묶인 개체는 그 자식 SHAPE_COMPONENT다. 코덱은 `ContainerControl`(`children`, `instanceId`, `containerTrailing`)로 읽는다.
+
+```
+CTRL_HEADER 'gso '            개체 공통 속성(묶음 전체). 자식에는 없다
+  [LIST_HEADER 캡션]          캡션 문단이 형제로 뒤따른다
+  [PARA_HEADER ...]
+  SHAPE_COMPONENT '$con'      ID 두 번. 아래 표
+    SHAPE_COMPONENT '$pol'    자식 1. ID 한 번. 그 아래는 맨 위 개체와 같다
+      SHAPE_COMPONENT_POLYGON
+    SHAPE_COMPONENT '$con'    자식 2. 묶음 안 묶음이면 같은 구조가 되풀이된다
+      SHAPE_COMPONENT ...
+```
+
+| 오프셋 | 자료형 | 설명 |
+| --- | --- | --- |
+| 0 | | 위 SHAPE_COMPONENT 표의 오프셋 0~195(행렬 쌍 수만큼 가변). 묶음 안의 `$con`이면 ID를 한 번만 써서 4바이트 짧다 |
+| 196 | WORD | 자식 수 n. **명세 표 121이 별도 레코드에 적은 값** |
+| 198 | UINT32 ×n | 자식 컨트롤 ID(`$pol`, `$con` 등). 자식 레코드 순서와 같다 |
+| 198 + 4n | UINT32 | **명세에 없음.** 묶음의 인스턴스 ID. HWPX `hp:container instid` |
+
+선·채우기·그림자는 없다. 자식 SHAPE_COMPONENT는 컨트롤 ID를 **한 번만** 쓰고(명세의 GenShapeObject는 맨 위 개체만 두 번 쓴다), 나머지 필드는 맨 위 개체와 같다. groupLevel은 묶인 깊이(맨 위 0)이고 행렬 쌍 수는 groupLevel + 1이다. groupOffsetX·Y는 묶음 안 위치(HWPX `hp:offset`)이고, 회전하지 않은 묶음에서는 자식 translation matrix의 x, y와 같았다. 묶음의 개체 요소 속성은 `0x80000`이고 안쪽 묶음은 bit 16이 켜진다. 회전·대칭한 묶음의 행렬 관계는 미확인이다.
+
+코덱은 자식 수와 자식 ID가 자식 레코드(모두 SHAPE_COMPONENT)와 맞을 때만 묶음을 모델로 읽고, 아니면 개체 전체를 `unknown`으로 둔다. 자식은 문단에 놓인 개체와 같은 타입에서 `placement`만 뺀 것(`GroupChild`)이고, 모델로 읽지 못한 자식은 그 자식만 `UnknownGroupChild`로 레코드를 원본 그대로 둔다. 쓸 때 자식 ID 배열은 `children`의 순서와 타입으로 만든다. 인스턴스 ID 뒤 바이트는 `containerTrailing`으로 보존한다.
 
 ### 구역 정의 (`secd`)
 
